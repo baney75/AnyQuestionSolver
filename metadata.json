@@ -1,0 +1,5 @@
+{
+  "name": "AnyQuestionSolver",
+  "description": "A clean, minimal web app that accepts a screenshot of any question, sends the image to Gemini Vision, and returns a clear, step-by-step solution.",
+  "requestFramePermissions": []
+}
