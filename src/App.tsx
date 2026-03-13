@@ -15,6 +15,8 @@ interface HistoryItem {
   visualUrl?: string | null;
 }
 
+const COPY_FEEDBACK_DURATION_MS = 2000;
+
 export default function App() {
   const [appState, setAppState] = useState<AppState>('IDLE');
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -204,7 +206,7 @@ export default function App() {
     if (solution) {
       navigator.clipboard.writeText(solution);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => setCopied(false), COPY_FEEDBACK_DURATION_MS);
     }
   };
 
