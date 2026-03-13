@@ -106,6 +106,11 @@ export default function App() {
   const handleHandwritingSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
+      if (files[0].size > 10 * 1024 * 1024) {
+        setErrorMsg("Handwriting sample is too large. Please use a smaller image.");
+        setAppState('ERROR');
+        return;
+      }
       setHandwritingFile(files[0]);
     }
   };
