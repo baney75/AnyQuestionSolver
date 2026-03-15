@@ -14,14 +14,35 @@ const SmilesRenderer = ({ smiles }: { smiles: string }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
+    let isActive = true;
+
     if (canvasRef.current && smiles) {
-      try {
-        const drawer = new SmilesDrawer();
-        drawer.draw(smiles.trim(), canvasRef.current, 'light');
-      } catch (error) {
-        console.error("Failed to render SMILES:", error);
-      }
+      const renderSmiles = async () => {
+        try {
+          // Instantiate a fresh drawer per render to avoid concurrent async mutations
+          // and allow parallel rendering of multiple structures on the same page.
+          const drawer = new SmilesDrawer();
+          const targetSmiles = smiles.trim();
+
+          // SmilesDrawer.draw is async and writes directly to the canvas internally.
+          // Since it provides no cancellation API, a stale draw may briefly paint
+          // if the prop changes rapidly, but this guard prevents any future
+          // post-draw state updates from running on stale data.
+          await drawer.draw(targetSmiles, canvasRef.current!, 'light');
+          if (!isActive || !canvasRef.current) return;
+        } catch (error) {
+          if (isActive) {
+            console.error("Failed to render SMILES:", error);
+          }
+        }
+      };
+
+      void renderSmiles();
     }
+
+    return () => {
+      isActive = false;
+    };
   }, [smiles]);
 
   return (
