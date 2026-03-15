@@ -16,6 +16,7 @@ interface HistoryItem {
 }
 
 const COPY_FEEDBACK_DURATION_MS = 2000;
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
 export default function App() {
   const [appState, setAppState] = useState<AppState>('IDLE');
@@ -94,7 +95,7 @@ export default function App() {
   };
 
   const handleImageSelected = (file: File) => {
-    if (file.size > 10 * 1024 * 1024) {
+    if (file.size > MAX_FILE_SIZE_BYTES) {
       setErrorMsg("Image is too large. Try a cropped screenshot.");
       setAppState('ERROR');
       return;
@@ -108,7 +109,13 @@ export default function App() {
   const handleHandwritingSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      setHandwritingFile(files[0]);
+      const file = files[0];
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        setErrorMsg("Image is too large. Try a cropped screenshot.");
+        setAppState('ERROR');
+        return;
+      }
+      setHandwritingFile(file);
     }
   };
 
