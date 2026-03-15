@@ -37,7 +37,7 @@ const SmilesRenderer = ({ smiles }: { smiles: string }) => {
         }
       };
 
-      renderSmiles();
+      void renderSmiles();
     }
 
     return () => {
