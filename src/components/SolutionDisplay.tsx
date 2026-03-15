@@ -10,16 +10,14 @@ interface SolutionDisplayProps {
   solution: string;
 }
 
-// Shared instance to avoid repeated instantiation overhead
-const sharedSmilesDrawer = new SmilesDrawer();
-
 const SmilesRenderer = ({ smiles }: { smiles: string }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     if (canvasRef.current && smiles) {
       try {
-        sharedSmilesDrawer.draw(smiles.trim(), canvasRef.current, 'light');
+        const drawer = new SmilesDrawer();
+        drawer.draw(smiles.trim(), canvasRef.current, 'light');
       } catch (error) {
         console.error("Failed to render SMILES:", error);
       }
@@ -43,7 +41,7 @@ export function SolutionDisplay({ solution }: SolutionDisplayProps) {
           components={{
             code(props) {
               const { children, className, node, ...rest } = props;
-              const match = /language-(\w+)/.exec(className || '');
+              const match = /language-(w+)/.exec(className || '');
               const language = match ? match[1] : '';
               
               if (language === 'smiles') {
