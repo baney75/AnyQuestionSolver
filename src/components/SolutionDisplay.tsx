@@ -10,14 +10,16 @@ interface SolutionDisplayProps {
   solution: string;
 }
 
+// Shared instance to avoid repeated instantiation overhead
+const sharedSmilesDrawer = new SmilesDrawer();
+
 const SmilesRenderer = ({ smiles }: { smiles: string }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     if (canvasRef.current && smiles) {
       try {
-        const drawer = new SmilesDrawer();
-        drawer.draw(smiles.trim(), canvasRef.current, 'light');
+        sharedSmilesDrawer.draw(smiles.trim(), canvasRef.current, 'light');
       } catch (error) {
         console.error("Failed to render SMILES:", error);
       }
