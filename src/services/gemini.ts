@@ -1,6 +1,6 @@
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const ai = new GoogleGenAI({ apiKey: import.meta.env.GEMINI_API_KEY });
 
 const SYSTEM_PROMPT = `You are an expert tutor capable of solving any academic question across all subjects including mathematics, physics, chemistry, biology, computer science, history, literature, logic, and foreign languages.
 
