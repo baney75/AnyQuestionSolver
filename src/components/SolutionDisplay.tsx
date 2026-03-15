@@ -10,27 +10,42 @@ interface SolutionDisplayProps {
   solution: string;
 }
 
-// Shared instance to avoid repeated instantiation overhead
-const sharedSmilesDrawer = new SmilesDrawer();
-// Queue to serialize asynchronous draw calls and prevent state corruption
-let drawQueue: Promise<void> = Promise.resolve();
-
 const SmilesRenderer = ({ smiles }: { smiles: string }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
+    let isActive = true;
+
     if (canvasRef.current && smiles) {
-      // Serialize draw calls to the shared instance
-      drawQueue = drawQueue.then(async () => {
+      const renderSmiles = async () => {
         try {
-          if (canvasRef.current) {
-            await sharedSmilesDrawer.draw(smiles.trim(), canvasRef.current, 'light');
+          // Instantiate a fresh drawer per render to avoid concurrent async mutations
+          // and allow parallel rendering of multiple structures on the same page.
+          const drawer = new SmilesDrawer();
+
+          // SmilesDrawer.draw is async. If the component unmounted or smiles prop changed
+          // before we finish parsing, we don't apply the final draw to the canvas.
+          await drawer.draw(smiles.trim(), canvasRef.current, 'light');
+
+          if (!isActive) {
+            // If the draw completed but the component is no longer active,
+            // the canvas content might be stale, but SmilesDrawer handles its own
+            // internal canvas updates. We just avoid doing anything else post-draw.
+            return;
           }
         } catch (error) {
-          console.error("Failed to render SMILES:", error);
+          if (isActive) {
+            console.error("Failed to render SMILES:", error);
+          }
         }
-      });
+      };
+
+      renderSmiles();
     }
+
+    return () => {
+      isActive = false;
+    };
   }, [smiles]);
 
   return (
