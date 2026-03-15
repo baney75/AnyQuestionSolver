@@ -130,11 +130,30 @@ export async function generateVisualExplanation(prompt: string, size: '1K' | '2K
 }
 
 export async function chatWithTutor(history: {role: string, text: string}[], message: string) {
-  const contents = history.map(h => `${h.role === 'user' ? 'User' : 'Tutor'}: ${h.text}`).join('\n') + `\nUser: ${message}\nTutor:`;
+  if (!message || message.trim().length === 0) {
+    throw new Error('Message must not be empty.');
+  }
+
+  const contents = history.map(h => ({
+    role: h.role === 'user' ? 'user' : 'model',
+    parts: [{ text: h.text }]
+  }));
   
+  contents.push({
+    role: 'user',
+    parts: [{ text: message }]
+  });
+
+  for (let i = 0; i < contents.length; i++) {
+    const expectedRole = i % 2 === 0 ? 'user' : 'model';
+    if (contents[i].role !== expectedRole) {
+      throw new Error(`Invalid chat history: turn ${i} must be '${expectedRole}', got '${contents[i].role}'.`);
+    }
+  }
+
   const response = await ai.models.generateContent({
     model: "gemini-3.1-pro-preview",
-    contents: [contents],
+    contents,
     config: {
       systemInstruction: "You are a helpful tutor answering follow-up questions about a solved problem. Keep your answers concise and helpful.",
     }
