@@ -25,8 +25,9 @@ const SmilesRenderer = ({ smiles }: { smiles: string }) => {
 
           // SmilesDrawer.draw is async. If the component unmounted or smiles prop changed
           // before we finish parsing, we don't apply the final draw to the canvas.
-          if (!isActive) return;
           await drawer.draw(smiles.trim(), canvasRef.current!, 'light');
+          // Guard stale post-draw side-effects (e.g. state updates) if any are added later.
+          if (!isActive || !canvasRef.current) return;
         } catch (error) {
           if (isActive) {
             console.error("Failed to render SMILES:", error);
