@@ -147,14 +147,18 @@ export default function App() {
       setSolution(result);
       setAppState('SOLVED');
       saveToHistory({ id: Date.now().toString(), timestamp: Date.now(), solution: result, type: 'solve' });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      if (err.message?.includes('429') || err.message?.includes('quota')) {
-        setErrorMsg("We're getting too many requests right now. Please wait a moment and try again.");
-      } else if (err.message?.includes('offline') || err.message?.includes('fetch')) {
-        setErrorMsg("No internet connection detected. Please check your connection.");
-      } else if (err.message?.includes('API key')) {
-        setErrorMsg("Configuration error. Please check the API key setup.");
+      if (err instanceof Error) {
+        if (err.message?.includes('429') || err.message?.includes('quota')) {
+          setErrorMsg("We're getting too many requests right now. Please wait a moment and try again.");
+        } else if (err.message?.includes('offline') || err.message?.includes('fetch')) {
+          setErrorMsg("No internet connection detected. Please check your connection.");
+        } else if (err.message?.includes('API key')) {
+          setErrorMsg("Configuration error. Please check the API key setup.");
+        } else {
+          setErrorMsg("Something went wrong on our end. Please try again.");
+        }
       } else {
         setErrorMsg("Something went wrong on our end. Please try again.");
       }
@@ -183,7 +187,7 @@ export default function App() {
       setVisualUrl(image);
       setAppState('SOLVED');
       saveToHistory({ id: Date.now().toString(), timestamp: Date.now(), solution: text, type: 'grade', visualUrl: image });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       setErrorMsg("Failed to grade work. Please try again.");
       setAppState('ERROR');
