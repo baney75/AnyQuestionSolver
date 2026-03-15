@@ -130,11 +130,19 @@ export async function generateVisualExplanation(prompt: string, size: '1K' | '2K
 }
 
 export async function chatWithTutor(history: {role: string, text: string}[], message: string) {
-  const contents = history.map(h => `${h.role === 'user' ? 'User' : 'Tutor'}: ${h.text}`).join('\n') + `\nUser: ${message}\nTutor:`;
+  const contents = history.map(h => ({
+    role: h.role === 'user' ? 'user' : 'model',
+    parts: [{ text: h.text }]
+  }));
   
+  contents.push({
+    role: 'user',
+    parts: [{ text: message }]
+  });
+
   const response = await ai.models.generateContent({
     model: "gemini-3.1-pro-preview",
-    contents: [contents],
+    contents,
     config: {
       systemInstruction: "You are a helpful tutor answering follow-up questions about a solved problem. Keep your answers concise and helpful.",
     }
