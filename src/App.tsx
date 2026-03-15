@@ -243,7 +243,7 @@ export default function App() {
         
       const reply = await chatWithTutor(contextHistory, newMessage);
       setChatHistory([...newHistory, { role: 'tutor', text: reply }]);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(err);
       setChatHistory([...newHistory, { role: 'tutor', text: "Sorry, I couldn't process that right now. Please try again." }]);
     } finally {
@@ -263,7 +263,7 @@ export default function App() {
       } else {
         alert("Failed to generate visual explanation.");
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(err);
       alert("Error generating visual explanation. Please check your API key and try again.");
     } finally {
