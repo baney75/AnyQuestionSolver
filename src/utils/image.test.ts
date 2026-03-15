@@ -1,9 +1,20 @@
-import { test, describe, beforeEach } from 'node:test';
+import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { resizeImage } from './image.ts';
 
 describe('resizeImage', () => {
+  let originalFile: any;
+  let originalURL: any;
+  let originalImage: any;
+  let originalDocument: any;
+
   beforeEach(() => {
+    // Save originals
+    originalFile = globalThis.File;
+    originalURL = globalThis.URL;
+    originalImage = globalThis.Image;
+    originalDocument = globalThis.document;
+
     // Setup minimal mocks for DOM objects
     globalThis.File = class File {
       name: string;
@@ -22,9 +33,6 @@ describe('resizeImage', () => {
       onerror: any;
       width: number = 100;
       height: number = 100;
-
-      // We'll define a custom property to store the behavior
-      _failLoad: boolean = false;
     } as any;
 
     // Intercept src set
@@ -32,11 +40,7 @@ describe('resizeImage', () => {
       configurable: true,
       set: function(val) {
         setTimeout(() => {
-          if (this._failLoad) {
-             if (this.onerror) this.onerror();
-          } else {
-             if (this.onload) this.onload();
-          }
+          if (this.onload) this.onload();
         }, 10);
       }
     });
@@ -54,6 +58,14 @@ describe('resizeImage', () => {
         return {};
       }
     } as any;
+  });
+
+  afterEach(() => {
+    // Restore originals
+    globalThis.File = originalFile;
+    globalThis.URL = originalURL;
+    globalThis.Image = originalImage;
+    globalThis.document = originalDocument;
   });
 
   test('happy path', async () => {

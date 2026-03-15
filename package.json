@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "node --experimental-strip-types src/utils/image.test.ts"
+    "test": "node --import tsx --test src/utils/image.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
