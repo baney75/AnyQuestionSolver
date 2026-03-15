@@ -10,17 +10,26 @@ interface SolutionDisplayProps {
   solution: string;
 }
 
+// Shared instance to avoid repeated instantiation overhead
+const sharedSmilesDrawer = new SmilesDrawer();
+// Queue to serialize asynchronous draw calls and prevent state corruption
+let drawQueue: Promise<void> = Promise.resolve();
+
 const SmilesRenderer = ({ smiles }: { smiles: string }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     if (canvasRef.current && smiles) {
-      try {
-        const drawer = new SmilesDrawer();
-        drawer.draw(smiles.trim(), canvasRef.current, 'light');
-      } catch (error) {
-        console.error("Failed to render SMILES:", error);
-      }
+      // Serialize draw calls to the shared instance
+      drawQueue = drawQueue.then(async () => {
+        try {
+          if (canvasRef.current) {
+            await sharedSmilesDrawer.draw(smiles.trim(), canvasRef.current, 'light');
+          }
+        } catch (error) {
+          console.error("Failed to render SMILES:", error);
+        }
+      });
     }
   }, [smiles]);
 
@@ -41,7 +50,7 @@ export function SolutionDisplay({ solution }: SolutionDisplayProps) {
           components={{
             code(props) {
               const { children, className, node, ...rest } = props;
-              const match = /language-(w+)/.exec(className || '');
+              const match = /language-(\w+)/.exec(className || '');
               const language = match ? match[1] : '';
               
               if (language === 'smiles') {
