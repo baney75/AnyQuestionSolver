@@ -33,15 +33,20 @@ describe('resizeImage', () => {
       onerror: any;
       width: number = 100;
       height: number = 100;
+      src: string = '';
     } as any;
 
     // Intercept src set
     Object.defineProperty(globalThis.Image.prototype, 'src', {
       configurable: true,
       set: function(val) {
+        this._src = val;
         setTimeout(() => {
           if (this.onload) this.onload();
         }, 10);
+      },
+      get: function() {
+        return this._src;
       }
     });
 
@@ -69,12 +74,25 @@ describe('resizeImage', () => {
   });
 
   test('happy path', async () => {
+    let revokedUrl: string | undefined;
+    globalThis.URL = {
+      createObjectURL: () => 'blob:test',
+      revokeObjectURL: (url: string) => { revokedUrl = url; }
+    } as any;
+
     const file = new File([''], 'test.jpg');
     const result = await resizeImage(file);
     assert.strictEqual(result, 'mockedbase64');
+    assert.strictEqual(revokedUrl, 'blob:test', 'Object URL should be revoked after use');
   });
 
   test('canvas context failure', async () => {
+    let revokedUrl: string | undefined;
+    globalThis.URL = {
+      createObjectURL: () => 'blob:test',
+      revokeObjectURL: (url: string) => { revokedUrl = url; }
+    } as any;
+
     // Override getContext to return null for this specific test
     const originalCreateElement = globalThis.document.createElement;
     globalThis.document.createElement = (tag: string) => {
@@ -92,16 +110,27 @@ describe('resizeImage', () => {
     } catch (e: any) {
       assert.strictEqual(e.message, 'Failed to get canvas context');
     }
+    assert.strictEqual(revokedUrl, 'blob:test', 'Object URL should be revoked after use');
   });
 
   test('image load failure', async () => {
+    let revokedUrl: string | undefined;
+    globalThis.URL = {
+      createObjectURL: () => 'blob:test',
+      revokeObjectURL: (url: string) => { revokedUrl = url; }
+    } as any;
+
     // Override Image.src setter to trigger onerror instead of onload
     Object.defineProperty(globalThis.Image.prototype, 'src', {
       configurable: true,
       set: function(val) {
+        this._src = val;
         setTimeout(() => {
           if (this.onerror) this.onerror();
         }, 10);
+      },
+      get: function() {
+        return this._src;
       }
     });
 
@@ -112,5 +141,46 @@ describe('resizeImage', () => {
     } catch (e: any) {
       assert.strictEqual(e.message, 'Failed to load image');
     }
+    assert.strictEqual(revokedUrl, 'blob:test', 'Object URL should be revoked after use');
+  });
+
+  test('scaling logic', async () => {
+    let resultingCanvasWidth: number = 0; let resultingCanvasHeight: number = 0;
+    // Override createElement to capture the canvas dimensions
+    const originalCreateElement = globalThis.document.createElement;
+    globalThis.document.createElement = (tag: string) => {
+      const element = originalCreateElement(tag);
+      if (tag === 'canvas') {
+        const originalToDataURL = (element as any).toDataURL;
+        (element as any).toDataURL = function(type: string, quality: number) {
+          resultingCanvasWidth = this.width;
+          resultingCanvasHeight = this.height;
+          return originalToDataURL.call(this, type, quality);
+        };
+      }
+      return element;
+    };
+
+    // Make Image mock return large dimensions
+    globalThis.Image = class Image {
+      onload: any;
+      width: number = 2560;
+      height: number = 1440;
+      _src: string = '';
+      set src(val: string) {
+        this._src = val;
+        setTimeout(() => {
+          if (this.onload) this.onload();
+        }, 10);
+      }
+      get src() { return this._src; }
+    } as any;
+
+    const file = new File([''], 'large_test.jpg');
+    const result = await resizeImage(file);
+
+    assert.strictEqual(result, 'mockedbase64');
+    assert.strictEqual(resultingCanvasWidth, 1920, 'Width should be scaled to max dimension 1920');
+    assert.strictEqual(resultingCanvasHeight, 1080, 'Height should be scaled proportionally (1440 * 1920 / 2560 = 1080)');
   });
 });

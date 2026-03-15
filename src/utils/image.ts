@@ -2,6 +2,7 @@ export async function resizeImage(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
+      URL.revokeObjectURL(img.src);
       const canvas = document.createElement('canvas');
       let width = img.width;
       let height = img.height;
@@ -28,7 +29,10 @@ export async function resizeImage(file: File): Promise<string> {
       const base64 = dataUrl.split(',')[1];
       resolve(base64);
     };
-    img.onerror = () => reject(new Error('Failed to load image'));
+    img.onerror = () => {
+      URL.revokeObjectURL(img.src);
+      reject(new Error('Failed to load image'));
+    };
     img.src = URL.createObjectURL(file);
   });
 }
