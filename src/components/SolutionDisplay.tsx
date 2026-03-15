@@ -22,11 +22,13 @@ const SmilesRenderer = ({ smiles }: { smiles: string }) => {
           // Instantiate a fresh drawer per render to avoid concurrent async mutations
           // and allow parallel rendering of multiple structures on the same page.
           const drawer = new SmilesDrawer();
+          const targetSmiles = smiles.trim();
 
-          // SmilesDrawer.draw is async. If the component unmounted or smiles prop changed
-          // before we finish parsing, we don't apply the final draw to the canvas.
-          await drawer.draw(smiles.trim(), canvasRef.current!, 'light');
-          // Guard stale post-draw side-effects (e.g. state updates) if any are added later.
+          // SmilesDrawer.draw is async and writes directly to the canvas internally.
+          // Since it provides no cancellation API, a stale draw may briefly paint
+          // if the prop changes rapidly, but this guard prevents any future
+          // post-draw state updates from running on stale data.
+          await drawer.draw(targetSmiles, canvasRef.current!, 'light');
           if (!isActive || !canvasRef.current) return;
         } catch (error) {
           if (isActive) {
