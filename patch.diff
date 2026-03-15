@@ -1,0 +1,29 @@
+--- src/App.tsx
++++ src/App.tsx
+@@ -149,12 +149,13 @@
+       setSolution(result);
+       setAppState('SOLVED');
+       saveToHistory({ id: Date.now().toString(), timestamp: Date.now(), solution: result, type: 'solve' });
+-    } catch (err: any) {
++    } catch (err: unknown) {
+       console.error(err);
+-      if (err.message?.includes('429') || err.message?.includes('quota')) {
++      const errorMessage = err instanceof Error ? err.message : String(err);
++      if (errorMessage.includes('429') || errorMessage.includes('quota')) {
+         setErrorMsg("We're getting too many requests right now. Please wait a moment and try again.");
+-      } else if (err.message?.includes('offline') || err.message?.includes('fetch')) {
++      } else if (errorMessage.includes('offline') || errorMessage.includes('fetch')) {
+         setErrorMsg("No internet connection detected. Please check your connection.");
+-      } else if (err.message?.includes('API key')) {
++      } else if (errorMessage.includes('API key')) {
+         setErrorMsg("Configuration error. Please check the API key setup.");
+       } else {
+@@ -185,7 +186,7 @@
+       setVisualUrl(image);
+       setAppState('SOLVED');
+       saveToHistory({ id: Date.now().toString(), timestamp: Date.now(), solution: text, type: 'grade', visualUrl: image });
+-    } catch (err: any) {
++    } catch (err: unknown) {
+       console.error(err);
+       setErrorMsg("Failed to grade work. Please try again.");
+       setAppState('ERROR');
