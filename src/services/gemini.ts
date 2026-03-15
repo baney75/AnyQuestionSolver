@@ -139,14 +139,17 @@ export async function chatWithTutor(history: {role: string, text: string}[], mes
     parts: [{ text: h.text }]
   }));
   
-  if (contents.length > 0 && contents[contents.length - 1].role === 'user') {
-    throw new Error('Invalid chat history: last turn must be a model response before sending a new user message.');
-  }
-
   contents.push({
     role: 'user',
     parts: [{ text: message }]
   });
+
+  for (let i = 0; i < contents.length; i++) {
+    const expectedRole = i % 2 === 0 ? 'user' : 'model';
+    if (contents[i].role !== expectedRole) {
+      throw new Error(`Invalid chat history: turn ${i} must be '${expectedRole}', got '${contents[i].role}'.`);
+    }
+  }
 
   const response = await ai.models.generateContent({
     model: "gemini-3.1-pro-preview",
