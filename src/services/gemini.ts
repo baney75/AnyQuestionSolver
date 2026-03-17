@@ -100,6 +100,36 @@ $$f'(x) = 6x + 5 + 0 = 6x + 5$$
 
 **Answer:** $f'(x) = 6x + 5$`;
   }
+  
+  // Demo mode for equation solving
+  if (text.toLowerCase().includes("2x + 3 = 15") || text.toLowerCase().includes("2x+3=15")) {
+    await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate API delay
+    return `**Subject:** Algebra
+
+**Question:** Solve the equation: $2x + 3 = 15$
+
+**Solution:**
+
+To solve for $x$, we need to isolate the variable on one side of the equation.
+
+Step 1: Subtract $3$ from both sides of the equation.
+
+$$2x + 3 - 3 = 15 - 3$$
+
+$$2x = 12$$
+
+Step 2: Divide both sides by $2$.
+
+$$\\frac{2x}{2} = \\frac{12}{2}$$
+
+$$x = 6$$
+
+Step 3: Verify the solution by substituting $x = 6$ back into the original equation.
+
+$$2(6) + 3 = 12 + 3 = 15$$ ✓
+
+**Answer:** $x = 6$`;
+  }
 
   const model = mode === 'deep' ? 'gemini-3.1-pro-preview' : 
                 mode === 'fast' ? 'gemini-3.1-flash-lite-preview' : 
