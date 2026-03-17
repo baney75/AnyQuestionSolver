@@ -1,7 +1,7 @@
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import type { SolveMode, GradeResult } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const ai = new GoogleGenAI({ apiKey: import.meta.env.GEMINI_API_KEY });
 
 // Maps each solve mode to the appropriate Gemini model identifier.
 const MODEL_BY_MODE: Record<SolveMode, string> = {
