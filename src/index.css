@@ -8,39 +8,24 @@
   --font-mono: "JetBrains Mono", monospace;
 }
 
-@layer base {
-  body {
-    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="%23111827" stroke="%23ffffff" stroke-width="1.5"><path d="M4 2l14 10-6 2 4 7-3 1-4-7-5 4z"/></svg>') 4 2, auto;
-  }
-  .dark body {
-    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="%23f3f4f6" stroke="%23111827" stroke-width="1.5"><path d="M4 2l14 10-6 2 4 7-3 1-4-7-5 4z"/></svg>') 4 2, auto;
-  }
-  button, a, select, input, .cursor-pointer {
-    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="%234f46e5" stroke="%23ffffff" stroke-width="1.5"><path d="M8 13V4.5A1.5 1.5 0 0 1 9.5 3h0A1.5 1.5 0 0 1 11 4.5V11h1V7.5A1.5 1.5 0 0 1 13.5 6h0A1.5 1.5 0 0 1 15 7.5V11h1V8.5A1.5 1.5 0 0 1 17.5 7h0A1.5 1.5 0 0 1 19 8.5V14c0 4-2.5 7-7 7H9c-3 0-5-2-5-5v-1l3-3z"/></svg>') 8 2, pointer !important;
-  }
-  .dark button, .dark a, .dark select, .dark input, .dark .cursor-pointer {
-    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="%23818cf8" stroke="%23111827" stroke-width="1.5"><path d="M8 13V4.5A1.5 1.5 0 0 1 9.5 3h0A1.5 1.5 0 0 1 11 4.5V11h1V7.5A1.5 1.5 0 0 1 13.5 6h0A1.5 1.5 0 0 1 15 7.5V11h1V8.5A1.5 1.5 0 0 1 17.5 7h0A1.5 1.5 0 0 1 19 8.5V14c0 4-2.5 7-7 7H9c-3 0-5-2-5-5v-1l3-3z"/></svg>') 8 2, pointer !important;
-  }
-}
-
 @layer utilities {
   .bg-grid-pattern {
-    background-image: linear-gradient(to right, rgba(0,0,0,0.05) 1px, transparent 1px),
-                      linear-gradient(to bottom, rgba(0,0,0,0.05) 1px, transparent 1px);
+    background-image: linear-gradient(to right, rgba(0,0,0,0.04) 1px, transparent 1px),
+                      linear-gradient(to bottom, rgba(0,0,0,0.04) 1px, transparent 1px);
     background-size: 24px 24px;
   }
   .dark .bg-grid-pattern {
-    background-image: linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
-                      linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px);
+    background-image: linear-gradient(to right, rgba(255,255,255,0.04) 1px, transparent 1px),
+                      linear-gradient(to bottom, rgba(255,255,255,0.04) 1px, transparent 1px);
   }
-  
+
   .neo-shadow {
     box-shadow: 4px 4px 0px 0px rgba(17, 24, 39, 1);
   }
   .dark .neo-shadow {
     box-shadow: 4px 4px 0px 0px rgba(243, 244, 246, 1);
   }
-  
+
   .neo-shadow-sm {
     box-shadow: 2px 2px 0px 0px rgba(17, 24, 39, 1);
   }
