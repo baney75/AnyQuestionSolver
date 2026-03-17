@@ -18,10 +18,6 @@ interface HistoryItem {
 const COPY_FEEDBACK_DURATION_MS = 2000;
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
-
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-
-
 export default function App() {
   const [appState, setAppState] = useState<AppState>('IDLE');
   const [imageFile, setImageFile] = useState<File | null>(null);
