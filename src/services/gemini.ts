@@ -3,66 +3,67 @@ import type { SolveMode, GradeResult } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: import.meta.env.GEMINI_API_KEY });
 
-// Maps each solve mode to the appropriate Gemini model identifier.
 const MODEL_BY_MODE: Record<SolveMode, string> = {
   deep: "gemini-3.1-pro-preview",
   fast: "gemini-3.1-flash-lite-preview",
-  search: "gemini-3-flash-preview",
+  research: "gemini-3-flash-preview",
 };
 
-const SYSTEM_PROMPT = `You are an expert tutor capable of solving any academic question across all subjects including mathematics, physics, chemistry, biology, computer science, history, literature, logic, and foreign languages.
+const SYSTEM_PROMPT = `You are an elite academic tutor and research assistant. You solve questions with rigorous accuracy across EVERY domain: mathematics, physics, chemistry, biology, computer science, engineering, history, literature, philosophy, economics, law, medicine, linguistics, and more.
 
-When given an image containing a question:
-1. First, identify and state the exact question being asked.
-2. Identify the subject/topic.
-3. Provide a clear, step-by-step solution.
-4. State the final answer clearly and concisely.
+YOUR CORE PRINCIPLES:
+1. ACCURACY IS PARAMOUNT. Double-check every calculation. Verify every fact.
+2. Show clear, step-by-step reasoning so students genuinely learn.
+3. Cite well-known theorems, laws, or principles by name when applicable.
+4. If a question is ambiguous, state your interpretation and proceed.
 
-CRITICAL FORMATTING RULES:
-- You MUST use LaTeX for ALL math equations, symbols, variables, and numbers.
-- Use single dollar signs ($) for inline math (e.g., $x^2 + y^2 = z^2$).
-- Use double dollar signs ($$) for block/display math.
-- NEVER use \\( or \\) or \\[ or \\].
-- NEVER write math as plain text (like x^2 or 1/3). Always wrap in $.
-- For Chemistry, use standard LaTeX subscripts/superscripts for chemical formulas (e.g., $\\text{H}_2\\text{O}$). Do NOT use \\ce{} as it requires an unsupported extension.
-- For 2D Chemical Structures (SMILES), output them inside a markdown code block with the language set to "smiles" (e.g., \`\`\`smiles\\nCCO\\n\`\`\`).
+FORMATTING RULES:
+- Use LaTeX with single dollar signs ($) for inline math and double ($$) for display math.
+- NEVER use \\( \\) or \\[ \\]. NEVER write math as plain text.
+- For chemistry: use LaTeX subscripts for formulas (e.g., $\\text{H}_2\\text{O}$, $\\text{NaOH}$).
+- For 2D molecular structures, output SMILES inside a \`\`\`smiles code block.
+- For organic reactions, write balanced equations using LaTeX with \\rightarrow.
 
-If the image contains multiple questions, solve all of them.
-If the question is ambiguous or partially cut off, state your assumption and proceed.
-If the image contains no identifiable question, say so clearly.
+CODE & COMPUTATION:
+- When a problem benefits from computation, include runnable Python code in a \`\`\`python block.
+- For physics simulations, statistical analysis, or numerical methods — always include Python.
+- Code must be self-contained and print its results clearly.
 
-Format your response as:
-**Subject:** [subject]
-**Question:** [restate the question]
+DATA VISUALIZATION:
+- When data or a function plot would help understanding, output a chart in a \`\`\`chart block.
+- Chart format is JSON: {"type":"line"|"bar","title":"...","xLabel":"...","yLabel":"...","data":[{"x":0,"y":10},...]}
+- Use charts for: function plots, data distributions, physics trajectories, economic trends, etc.
+
+RESPONSE FORMAT:
+**Subject:** [subject/domain]
+**Question:** [restate the question precisely]
 **Solution:**
-[step by step]
-**Answer:** [final answer]`;
+[rigorous step-by-step solution with explanations]
+**Answer:** [final answer, clearly stated]
 
-/**
- * Build the generation config for a given solve mode and optional subject hint.
- * Deep mode enables extended thinking; search mode enables Google Search grounding.
- */
+If the image contains multiple questions, solve ALL of them.
+If it is a research question, provide a thorough, well-structured analysis with key concepts defined.`;
+
 function buildConfig(mode: SolveMode, subject: string, detailed: boolean) {
   let prompt = SYSTEM_PROMPT;
   if (subject !== "Auto-detect") {
-    prompt += `\n\nThe user has specified the subject is: ${subject}.`;
+    prompt += `\n\nThe user has specified the subject is: ${subject}. Tailor your response to this domain's conventions and notation.`;
   }
   if (detailed) {
-    prompt += `\n\nProvide an EXTREMELY detailed, step-by-step explanation. Break down every single concept thoroughly.`;
+    prompt += `\n\nProvide an EXTREMELY detailed, step-by-step explanation. Break down every single concept. Include worked examples, edge cases, and conceptual connections. Add Python code for computation and charts for visualization where helpful.`;
   }
 
   const config: Record<string, unknown> = { systemInstruction: prompt };
 
   if (mode === "deep") {
     config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
-  } else if (mode === "search") {
+  } else if (mode === "research") {
     config.tools = [{ googleSearch: {} }];
   }
 
   return config;
 }
 
-/** Solve a question from an uploaded image. */
 export async function solveQuestion(
   base64Image: string,
   mode: SolveMode,
@@ -73,14 +74,13 @@ export async function solveQuestion(
     model: MODEL_BY_MODE[mode],
     contents: [
       { inlineData: { mimeType: "image/jpeg", data: base64Image } },
-      "Solve the question in this image.",
+      "Solve the question in this image. Be rigorous and thorough.",
     ],
     config: buildConfig(mode, subject, detailed),
   });
   return response.text ?? "";
 }
 
-/** Solve a question from pasted/typed text. */
 export async function solveTextQuestion(
   text: string,
   mode: SolveMode,
@@ -89,13 +89,12 @@ export async function solveTextQuestion(
 ): Promise<string> {
   const response = await ai.models.generateContent({
     model: MODEL_BY_MODE[mode],
-    contents: [text, "Solve the question in this text."],
+    contents: [text],
     config: buildConfig(mode, subject, detailed),
   });
   return response.text ?? "";
 }
 
-/** Generate an AI-created diagram/visual explanation for a solved problem. */
 export async function generateVisualExplanation(
   prompt: string,
 ): Promise<string | null> {
@@ -113,7 +112,6 @@ export async function generateVisualExplanation(
   return null;
 }
 
-/** Send a follow-up message to the AI tutor, passing the full chat history. */
 export async function chatWithTutor(
   history: { role: string; text: string }[],
   message: string,
@@ -126,7 +124,6 @@ export async function chatWithTutor(
   }));
   contents.push({ role: "user", parts: [{ text: message }] });
 
-  // Gemini requires strictly alternating user/model turns.
   for (let i = 0; i < contents.length; i++) {
     const expected = i % 2 === 0 ? "user" : "model";
     if (contents[i].role !== expected) {
@@ -141,27 +138,22 @@ export async function chatWithTutor(
     contents,
     config: {
       systemInstruction:
-        "You are a helpful tutor answering follow-up questions about a solved problem. Keep your answers concise and helpful.",
+        "You are a helpful tutor answering follow-up questions. Be concise but thorough. Use LaTeX for math. Include Python code or charts when computation would help.",
     },
   });
   return response.text ?? "";
 }
 
-/**
- * Grade student work by first analysing the image for correctness,
- * then generating a visually-annotated version with corrections.
- */
 export async function gradeWork(
   base64Image: string,
   inkColor: string,
   handwritingBase64?: string | null,
 ): Promise<GradeResult> {
-  // Step 1 — deep analysis with thinking + search for maximum accuracy
   const analysisResponse = await ai.models.generateContent({
     model: "gemini-3.1-pro-preview",
     contents: [
       { inlineData: { mimeType: "image/jpeg", data: base64Image } },
-      "You are an expert grader. Review the student's work in this image. Check all calculations with supreme accuracy. Identify any mistakes. Provide a step-by-step correct solution. Use $ for inline math and $$ for block math.",
+      "You are an expert grader. Review the student's work with supreme accuracy. Check all calculations meticulously. Identify any mistakes. Provide a step-by-step correct solution. Use $ for inline math and $$ for block math.",
     ],
     config: {
       thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
@@ -170,7 +162,6 @@ export async function gradeWork(
   });
   const analysisText = analysisResponse.text ?? "";
 
-  // Step 2 — generate a visually-marked-up copy of the student's work
   let editedImageBase64: string | null = null;
   try {
     const parts: Record<string, unknown>[] = [

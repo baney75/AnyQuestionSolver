@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, BookOpen, Loader2 } from "lucide-react";
 
 import type { AppState, SolveMode, ChatMessage, HistoryItem } from "./types";
 import { useDarkMode } from "./hooks/useDarkMode";
@@ -13,6 +13,7 @@ import {
   generateVisualExplanation,
   gradeWork,
 } from "./services/gemini";
+import { lookupWord, type DictionaryEntry } from "./services/dictionary";
 
 import { Header } from "./components/Header";
 import { Dropzone } from "./components/Dropzone";
@@ -24,6 +25,7 @@ import { VisualExplanation } from "./components/VisualExplanation";
 import { LoadingState } from "./components/LoadingState";
 import { ErrorState } from "./components/ErrorState";
 import { HistorySidebar } from "./components/HistorySidebar";
+import { DictionaryResult } from "./components/DictionaryResult";
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 
@@ -53,6 +55,11 @@ export default function App() {
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [isChatLoading, setIsChatLoading] = useState(false);
 
+  // ── Dictionary state ─────────────────────────────────────────────────
+  const [dictEntries, setDictEntries] = useState<DictionaryEntry[] | null>(null);
+  const [dictLoading, setDictLoading] = useState(false);
+  const [dictWord, setDictWord] = useState("");
+
   // ── Sidebar state ───────────────────────────────────────────────────
   const [showHistory, setShowHistory] = useState(false);
 
@@ -72,6 +79,8 @@ export default function App() {
     setChatHistory([]);
     setVisualUrl(null);
     setHandwritingFile(null);
+    setDictEntries(null);
+    setDictWord("");
   }, []);
 
   /** Classifies API errors into user-friendly messages. */
@@ -236,6 +245,25 @@ export default function App() {
     }
   }, [solution]);
 
+  // ── Dictionary handler ───────────────────────────────────────────────
+
+  const handleDefine = useCallback(async () => {
+    const word = dictWord.trim();
+    if (!word) return;
+    setDictLoading(true);
+    setDictEntries(null);
+    try {
+      const entries = await lookupWord(word);
+      setDictEntries(entries);
+    } catch (err) {
+      console.error(err);
+      setErrorMsg(err instanceof Error ? err.message : "Dictionary lookup failed.");
+      setAppState("ERROR");
+    } finally {
+      setDictLoading(false);
+    }
+  }, [dictWord]);
+
   // ── History handler ─────────────────────────────────────────────────
 
   const loadHistoryItem = useCallback((item: HistoryItem) => {
@@ -286,12 +314,43 @@ export default function App() {
                     <option>Chemistry</option>
                     <option>Biology</option>
                     <option>Computer Science</option>
+                    <option>Engineering</option>
+                    <option>Statistics</option>
+                    <option>Economics</option>
                     <option>History</option>
                     <option>Literature</option>
+                    <option>Philosophy</option>
+                    <option>Psychology</option>
+                    <option>Medicine</option>
+                    <option>Law</option>
                   </select>
                   <ChevronDown className="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 text-gray-900 dark:text-gray-100 pointer-events-none" />
                 </div>
               </div>
+              {/* Dictionary quick-lookup */}
+              <div className="mb-4 flex items-center gap-2">
+                <div className="flex-1 flex items-center gap-2 bg-white dark:bg-gray-800 border-2 border-gray-900 dark:border-gray-100 rounded-xl px-3 py-2 neo-shadow-sm">
+                  <BookOpen className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                  <input
+                    type="text"
+                    value={dictWord}
+                    onChange={(e) => setDictWord(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleDefine()}
+                    placeholder="Look up any word..."
+                    className="flex-1 bg-transparent text-sm font-medium text-gray-900 dark:text-gray-100 focus:outline-none"
+                  />
+                </div>
+                <button
+                  onClick={handleDefine}
+                  disabled={!dictWord.trim() || dictLoading}
+                  className="px-4 py-2 text-sm font-bold bg-amber-400 dark:bg-amber-600 text-gray-900 dark:text-white border-2 border-gray-900 dark:border-gray-100 rounded-xl neo-shadow-sm hover:-translate-y-0.5 transition-all disabled:opacity-50"
+                >
+                  {dictLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Define"}
+                </button>
+              </div>
+
+              {dictEntries && <DictionaryResult entries={dictEntries} />}
+
               <Dropzone
                 onImageSelected={handleImageSelected}
                 onTextPasted={handleTextPasted}

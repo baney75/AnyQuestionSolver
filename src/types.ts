@@ -2,7 +2,7 @@
 export type AppState = 'IDLE' | 'PREVIEWING' | 'LOADING' | 'SOLVED' | 'ERROR';
 
 /** Which Gemini model tier to use when solving a question. */
-export type SolveMode = 'deep' | 'fast' | 'search';
+export type SolveMode = 'deep' | 'fast' | 'research';
 
 /** A single message in the follow-up chat with the AI tutor. */
 export interface ChatMessage {

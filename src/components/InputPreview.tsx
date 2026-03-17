@@ -75,9 +75,9 @@ export function InputPreview({
               <Zap className="w-5 h-5 text-amber-500" />
               Fast Solve
             </button>
-            <button onClick={() => onSolve("search")} className={`${BTN_BASE} bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100`}>
+            <button onClick={() => onSolve("research")} className={`${BTN_BASE} bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100`}>
               <Search className="w-5 h-5 text-blue-500" />
-              Search Web
+              Research
             </button>
           </div>
 
