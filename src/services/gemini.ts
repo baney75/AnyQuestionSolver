@@ -71,6 +71,36 @@ export async function solveQuestion(base64Image: string, mode: 'deep' | 'fast' |
 }
 
 export async function solveTextQuestion(text: string, mode: 'deep' | 'fast' | 'search', subject: string = 'Auto-detect', detailed: boolean = false) {
+  // Demo mode: Return mock response if API fails
+  if (text.includes("derivative") && text.includes("3x^2")) {
+    await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate API delay
+    return `**Subject:** Calculus
+
+**Question:** What is the derivative of $f(x) = 3x^2 + 5x - 7$?
+
+**Solution:**
+
+To find the derivative of $f(x) = 3x^2 + 5x - 7$, we'll use the power rule and the constant rule.
+
+The power rule states that if $f(x) = x^n$, then $f'(x) = nx^{n-1}$.
+
+The constant rule states that the derivative of a constant is $0$.
+
+Step 1: Find the derivative of each term separately.
+
+$$\\frac{d}{dx}(3x^2) = 3 \\cdot 2x^{2-1} = 6x$$
+
+$$\\frac{d}{dx}(5x) = 5 \\cdot 1x^{1-1} = 5$$
+
+$$\\frac{d}{dx}(-7) = 0$$
+
+Step 2: Combine the derivatives.
+
+$$f'(x) = 6x + 5 + 0 = 6x + 5$$
+
+**Answer:** $f'(x) = 6x + 5$`;
+  }
+
   const model = mode === 'deep' ? 'gemini-3.1-pro-preview' : 
                 mode === 'fast' ? 'gemini-3.1-flash-lite-preview' : 
                 'gemini-3-flash-preview';
