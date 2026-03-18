@@ -16,11 +16,4 @@ export interface HistoryItem {
   timestamp: number;
   solution: string;
   type: 'solve' | 'grade';
-  visualUrl?: string | null;
-}
-
-/** Result returned by the gradeWork service. */
-export interface GradeResult {
-  text: string;
-  image: string | null;
 }

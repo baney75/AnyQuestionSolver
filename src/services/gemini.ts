@@ -1,5 +1,5 @@
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
-import type { SolveMode, GradeResult } from "../types";
+import type { SolveMode } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: import.meta.env.GEMINI_API_KEY });
 
@@ -33,6 +33,40 @@ DATA VISUALIZATION:
 - When data or a function plot would help understanding, output a chart in a \`\`\`chart block.
 - Chart format is JSON: {"type":"line"|"bar","title":"...","xLabel":"...","yLabel":"...","data":[{"x":0,"y":10},...]}
 - Use charts for: function plots, data distributions, physics trajectories, economic trends, etc.
+
+IMAGE SEARCH:
+When visual content would help understanding, include an image search marker:
+[IMAGE_SEARCH: "descriptive search query"]
+
+Use for:
+- Geographic locations ("Where is the Burj Khalifa?", "Show me the Grand Canyon")
+- Physical objects ("What does a quasar look like?", "Show me a human heart")
+- Anatomy ("What does a mitochondria look like?")
+- Historical figures/places ("Show me a picture of the Colosseum")
+- Scientific diagrams (molecules, cells, planets, stars)
+- Art and architecture references
+- Any concept where visual context aids comprehension
+
+DEFINITIONS:
+When defining a word, structure the response as:
+[DEFINITION]
+**word** /phonetic pronunciation/
+*part of speech*
+1. Definition here.
+   - Example: "quote showing usage"
+2. Second definition if applicable.
+
+Synonyms: word1, word2, word3
+[END_DEFINITION]
+
+GRADING FEEDBACK:
+When grading student work:
+- Use **bold** for section headers (e.g., **Question 1**, **Corrections**)
+- Use ~~strikethrough~~ for incorrect work
+- Use ✅ for correct parts
+- Use 📝 for corrections and hints
+- Use clear numbering for steps
+- Be constructive and encouraging
 
 RESPONSE FORMAT:
 **Subject:** [subject/domain]
@@ -129,56 +163,31 @@ export async function chatWithTutor(
   return response.text ?? "";
 }
 
-export async function gradeWork(
-  base64Image: string,
-  inkColor: string,
-  handwritingBase64?: string | null,
-): Promise<GradeResult> {
-  const analysisResponse = await ai.models.generateContent({
+export async function gradeWork(base64Image: string): Promise<string> {
+  const response = await ai.models.generateContent({
     model: "gemini-3.1-pro-preview",
     contents: [
       { inlineData: { mimeType: "image/jpeg", data: base64Image } },
-      "You are an expert grader. Review the student's work with supreme accuracy. Check all calculations meticulously. Identify any mistakes. Provide a step-by-step correct solution. Use $ for inline math and $$ for block math.",
+      `You are an expert grader and tutor. Review the student's work with supreme accuracy.
+
+INSTRUCTIONS:
+1. Check all calculations meticulously
+2. Identify any mistakes and explain why they're wrong
+3. Provide the correct solution step-by-step
+4. Be constructive and encouraging
+
+FORMATTING:
+- Use **bold** for section headers
+- Use ~~strikethrough~~ for incorrect work
+- Use ✅ for correct parts
+- Use 📝 for corrections
+- Use $ for inline math and $$ for block math
+- Number your steps clearly`,
     ],
     config: {
       thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
       tools: [{ googleSearch: {} }],
     },
   });
-  const analysisText = analysisResponse.text ?? "";
-
-  let editedImageBase64: string | null = null;
-  try {
-    const parts: Record<string, unknown>[] = [
-      { inlineData: { mimeType: "image/jpeg", data: base64Image } },
-    ];
-
-    let prompt = `Act as a teacher grading this work. Add visual corrections, checkmarks, and write the correct answers where mistakes were made. Use ${inkColor} ink. Make it look like handwritten grading. Based on this analysis: ${analysisText.substring(0, 800)}`;
-
-    if (handwritingBase64) {
-      parts.push({
-        inlineData: { mimeType: "image/jpeg", data: handwritingBase64 },
-      });
-      prompt +=
-        "\n\nCRITICAL: Match the handwriting style shown in the SECOND image exactly when writing your corrections.";
-    }
-
-    parts.push({ text: prompt });
-
-    const editResponse = await ai.models.generateContent({
-      model: "gemini-2.5-flash-image",
-      contents: { parts },
-    });
-
-    for (const part of editResponse.candidates?.[0]?.content?.parts ?? []) {
-      if (part.inlineData) {
-        editedImageBase64 = `data:image/jpeg;base64,${part.inlineData.data}`;
-        break;
-      }
-    }
-  } catch (e) {
-    console.error("Image edit failed", e);
-  }
-
-  return { text: analysisText, image: editedImageBase64 };
+  return response.text ?? "";
 }

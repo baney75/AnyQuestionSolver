@@ -21,7 +21,7 @@ export function DictionaryResult({ entries }: DictionaryResultProps) {
 
       <div className="p-6 space-y-6">
         {entries.map((entry, i) => (
-          <div key={i}>
+          <div key={`entry-${entry.word}-${i}`}>
             {/* Word + phonetic */}
             <div className="flex items-baseline gap-3 mb-4">
               <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
@@ -36,9 +36,10 @@ export function DictionaryResult({ entries }: DictionaryResultProps) {
                 (p, j) =>
                   p.audio && (
                     <button
-                      key={j}
+                      key={`audio-${p.audio}`}
+                      type="button"
                       onClick={() => playAudio(p.audio!)}
-                      className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                      className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
                       title="Play pronunciation"
                     >
                       <Volume2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
@@ -48,14 +49,14 @@ export function DictionaryResult({ entries }: DictionaryResultProps) {
             </div>
 
             {/* Meanings */}
-            {entry.meanings.map((meaning, j) => (
-              <div key={j} className="mb-4">
+            {entry.meanings.map((meaning) => (
+              <div key={`${meaning.partOfSpeech}-${entry.word}`} className="mb-4">
                 <span className="inline-block text-xs font-bold font-mono uppercase px-2 py-1 rounded bg-indigo-100 text-indigo-900 dark:bg-indigo-900 dark:text-indigo-100 border border-indigo-900 dark:border-indigo-100 mb-2">
                   {meaning.partOfSpeech}
                 </span>
                 <ol className="list-decimal list-inside space-y-2 ml-2">
-                  {meaning.definitions.slice(0, 4).map((def, k) => (
-                    <li key={k} className="text-gray-900 dark:text-gray-100">
+                  {meaning.definitions.slice(0, 4).map((def) => (
+                    <li key={def.definition.slice(0, 50)} className="text-gray-900 dark:text-gray-100">
                       <span className="font-medium">{def.definition}</span>
                       {def.example && (
                         <p className="ml-6 mt-1 text-sm italic text-gray-600 dark:text-gray-400">
