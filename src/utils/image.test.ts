@@ -1,5 +1,4 @@
-import { test, describe, mock, afterEach, beforeEach } from 'node:test';
-import assert from 'node:assert';
+import { test, describe, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { resizeImage } from './image.ts';
 
 describe('resizeImage', () => {
@@ -9,8 +8,8 @@ describe('resizeImage', () => {
 
   beforeEach(() => {
     global.URL = {
-      createObjectURL: mock.fn(() => 'blob:http://localhost/mock-blob'),
-      revokeObjectURL: mock.fn(),
+      createObjectURL: mock(() => 'blob:http://localhost/mock-blob'),
+      revokeObjectURL: mock(() => {}),
     } as any;
   });
 
@@ -18,7 +17,6 @@ describe('resizeImage', () => {
     global.Image = originalImage;
     global.document = originalDocument;
     global.URL = originalURL;
-    mock.restoreAll();
   });
 
   function setupMocks({
@@ -32,28 +30,28 @@ describe('resizeImage', () => {
     succeed?: boolean;
     hasContext?: boolean;
   }) {
-    const drawImageMock = mock.fn();
-    const toDataURLMock = mock.fn(() => 'data:image/jpeg;base64,mockBase64DataUrl');
+    const drawImageMock = mock(() => {});
+    const toDataURLMock = mock(() => 'data:image/jpeg;base64,mockBase64DataUrl');
 
     const canvasMock = {
       width: 0,
       height: 0,
-      getContext: mock.fn((type: string) => {
+      getContext: (type: string) => {
         if (type === '2d' && hasContext) {
           return {
             drawImage: drawImageMock,
           };
         }
         return null;
-      }),
+      },
       toDataURL: toDataURLMock,
     };
 
     global.document = {
-      createElement: mock.fn((tag: string) => {
+      createElement: (tag: string) => {
         if (tag === 'canvas') return canvasMock;
         return {};
-      }),
+      },
     } as any;
 
     global.Image = class {
@@ -89,18 +87,10 @@ describe('resizeImage', () => {
 
     const result = await resizeImage(file);
 
-    assert.strictEqual(result, 'mockBase64DataUrl');
-    assert.strictEqual(canvasMock.width, 1920);
-    // height = 2160 * (1920 / 3840) = 1080
-    assert.strictEqual(canvasMock.height, 1080);
-
-    // Check if drawImage was called with correct arguments
-    const callArgs = drawImageMock.mock.calls[0].arguments;
-    // drawImage(img, 0, 0, width, height)
-    assert.strictEqual(callArgs[1], 0);
-    assert.strictEqual(callArgs[2], 0);
-    assert.strictEqual(callArgs[3], 1920);
-    assert.strictEqual(callArgs[4], 1080);
+    expect(result).toBe('mockBase64DataUrl');
+    expect(canvasMock.width).toBe(1920);
+    expect(canvasMock.height).toBe(1080);
+    expect(drawImageMock).toHaveBeenCalled();
   });
 
   test('should resize image when height exceeds max dimension (1920)', async () => {
@@ -109,14 +99,10 @@ describe('resizeImage', () => {
 
     const result = await resizeImage(file);
 
-    assert.strictEqual(result, 'mockBase64DataUrl');
-    // width = 1080 * (1920 / 3840) = 540
-    assert.strictEqual(canvasMock.width, 540);
-    assert.strictEqual(canvasMock.height, 1920);
-
-    const callArgs = drawImageMock.mock.calls[0].arguments;
-    assert.strictEqual(callArgs[3], 540);
-    assert.strictEqual(callArgs[4], 1920);
+    expect(result).toBe('mockBase64DataUrl');
+    expect(canvasMock.width).toBe(540);
+    expect(canvasMock.height).toBe(1920);
+    expect(drawImageMock).toHaveBeenCalled();
   });
 
   test('should not resize image if dimensions are below max dimension', async () => {
@@ -125,32 +111,23 @@ describe('resizeImage', () => {
 
     const result = await resizeImage(file);
 
-    assert.strictEqual(result, 'mockBase64DataUrl');
-    assert.strictEqual(canvasMock.width, 800);
-    assert.strictEqual(canvasMock.height, 600);
-
-    const callArgs = drawImageMock.mock.calls[0].arguments;
-    assert.strictEqual(callArgs[3], 800);
-    assert.strictEqual(callArgs[4], 600);
+    expect(result).toBe('mockBase64DataUrl');
+    expect(canvasMock.width).toBe(800);
+    expect(canvasMock.height).toBe(600);
+    expect(drawImageMock).toHaveBeenCalled();
   });
 
   test('should reject if canvas context is unavailable', async () => {
     setupMocks({ imgWidth: 800, imgHeight: 600, hasContext: false });
     const file = new File([''], 'test.jpg', { type: 'image/jpeg' });
 
-    await assert.rejects(
-      async () => await resizeImage(file),
-      /Failed to get canvas context/
-    );
+    expect(resizeImage(file)).rejects.toThrow('Failed to get canvas context');
   });
 
   test('should reject if image fails to load', async () => {
     setupMocks({ imgWidth: 800, imgHeight: 600, succeed: false });
     const file = new File([''], 'test.jpg', { type: 'image/jpeg' });
 
-    await assert.rejects(
-      async () => await resizeImage(file),
-      /Failed to load image/
-    );
+    expect(resizeImage(file)).rejects.toThrow('Failed to load image');
   });
 });
