@@ -34,10 +34,13 @@ export function Dropzone({
   const [voiceStatus, setVoiceStatus] = useState("");
   const [textInput, setTextInput] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const recordingTimeoutRef = useRef<number | null>(null);
+  const liveTranscriptRef = useRef("");
+  const deliveredTranscriptRef = useRef(false);
 
   const cleanupMediaStream = useCallback(() => {
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -241,7 +244,117 @@ export function Dropzone({
     }
   }, [cleanupMediaStream, clearRecordingTimeout, isListening, isTranscribing, onError, onVoiceInput]);
 
+  const startListening = useCallback(async () => {
+    if (isListening || isTranscribing) {
+      return;
+    }
+
+    setVoiceStatus("Starting mic...");
+    liveTranscriptRef.current = "";
+    deliveredTranscriptRef.current = false;
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      await startRecordingFallback();
+      return;
+    }
+
+    if (navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
+      } catch {
+        setVoiceStatus("");
+        onError("Microphone access is blocked. Allow microphone permission in your browser and try again.");
+        return;
+      }
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setVoiceStatus("Listening...");
+    };
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      const transcript = Array.from(
+        { length: event.results.length },
+        (_, index) => event.results[index]?.[0]?.transcript ?? "",
+      )
+        .join(" ")
+        .trim();
+
+      if (transcript) {
+        liveTranscriptRef.current = transcript;
+        setVoiceStatus(transcript);
+      }
+
+      const latestResult = event.results[event.resultIndex];
+      if (latestResult?.isFinal && transcript) {
+        deliveredTranscriptRef.current = true;
+        setVoiceStatus("");
+        setIsListening(false);
+        recognition.stop();
+        onVoiceInput?.(transcript);
+      }
+    };
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      recognitionRef.current = null;
+      setIsListening(false);
+      setVoiceStatus("");
+
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        onError("Microphone access is blocked. Allow microphone permission in your browser and try again.");
+        return;
+      }
+      if (event.error === "audio-capture") {
+        onError("No microphone was detected. Connect a microphone and try again.");
+        return;
+      }
+      if (event.error === "no-speech") {
+        onError("No speech was detected. Try again and speak a little closer to the microphone.");
+        return;
+      }
+      if (event.error === "network" || event.error === "aborted") {
+        void startRecordingFallback();
+        return;
+      }
+
+      onError("Live voice recognition failed in this browser. Try again or use the fallback recording flow.");
+    };
+
+    recognition.onend = () => {
+      recognitionRef.current = null;
+      setIsListening(false);
+
+      if (!deliveredTranscriptRef.current && liveTranscriptRef.current.trim()) {
+        const transcript = liveTranscriptRef.current.trim();
+        liveTranscriptRef.current = "";
+        setVoiceStatus("");
+        onVoiceInput?.(transcript);
+        return;
+      }
+
+      liveTranscriptRef.current = "";
+      setVoiceStatus("");
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  }, [isListening, isTranscribing, onError, onVoiceInput, startRecordingFallback]);
+
   const stopListening = useCallback(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      setVoiceStatus(liveTranscriptRef.current ? "Using what I heard..." : "Stopping...");
+      return;
+    }
+
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
       setVoiceStatus("Transcribing...");
@@ -252,6 +365,7 @@ export function Dropzone({
   useEffect(() => {
     return () => {
       clearRecordingTimeout();
+      recognitionRef.current?.abort();
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
       }
@@ -295,12 +409,12 @@ export function Dropzone({
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                void (isListening ? stopListening() : startRecordingFallback());
+                void (isListening ? stopListening() : startListening());
               }}
               aria-label={isListening ? 'Stop voice recording' : isTranscribing ? 'Transcribing voice input' : 'Start voice recording'}
               title={isListening ? 'Stop voice recording' : isTranscribing ? 'Transcribing voice input' : 'Start voice recording'}
               disabled={isTranscribing}
-              className={`absolute right-6 top-6 z-10 inline-flex h-16 w-16 items-center justify-center rounded-full border-2 neo-shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-70 ${
+              className={`absolute right-6 top-6 z-30 inline-flex h-16 w-16 items-center justify-center rounded-full border-2 neo-shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-70 ${
                 isListening
                   ? 'border-[var(--aqs-accent-strong)] bg-[var(--aqs-accent)] text-white'
                   : 'border-gray-900 bg-[var(--aqs-accent-soft)] text-[var(--aqs-accent)] dark:border-gray-100 dark:bg-[color:rgba(122,31,52,0.2)] dark:text-[var(--aqs-accent-dark)]'
@@ -310,29 +424,20 @@ export function Dropzone({
             </button>
           )}
           <div
-            role="button"
-            tabIndex={0}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                triggerFilePicker();
-              }
-            }}
-            className={`relative block w-full cursor-pointer overflow-hidden rounded-[2.2rem] border-2 px-8 py-14 text-center transition-all duration-200 neo-shadow focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[color:rgba(122,31,52,0.18)] ${
+            className={`relative block w-full overflow-hidden rounded-[2.2rem] border-2 px-8 py-14 text-center transition-all duration-200 neo-shadow focus-within:outline-none focus-within:ring-4 focus-within:ring-[color:rgba(122,31,52,0.18)] ${
               isDragging
                 ? 'border-[var(--aqs-accent)] bg-[var(--aqs-accent-soft)] translate-x-[2px] translate-y-[2px] shadow-none dark:bg-[color:rgba(122,31,52,0.2)]'
                 : 'border-gray-900 bg-white hover:-translate-y-1 dark:border-gray-100 dark:bg-gray-900'
             }`}
           >
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleFileChange}
+            <button
+              type="button"
               aria-label="Upload image"
-              className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
+              onClick={triggerFilePicker}
+              className="absolute inset-y-0 left-0 right-28 z-10 cursor-pointer rounded-[2.2rem] border-0 bg-transparent p-0"
             />
 
             <div className="pointer-events-none relative z-0">
@@ -376,12 +481,12 @@ export function Dropzone({
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                void (isListening ? stopListening() : startRecordingFallback());
+                void (isListening ? stopListening() : startListening());
               }}
               aria-label={isListening ? 'Stop voice recording' : isTranscribing ? 'Transcribing voice input' : 'Start voice recording'}
               title={isListening ? 'Stop voice recording' : isTranscribing ? 'Transcribing voice input' : 'Start voice recording'}
               disabled={isTranscribing}
-              className={`inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 neo-shadow-sm transition disabled:cursor-not-allowed disabled:opacity-70 ${
+              className={`relative z-20 inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 neo-shadow-sm transition disabled:cursor-not-allowed disabled:opacity-70 ${
                 isListening
                   ? 'border-[var(--aqs-accent-strong)] bg-[var(--aqs-accent)] text-white'
                   : 'border-gray-900 bg-[var(--aqs-accent-soft)] text-[var(--aqs-accent)] dark:border-gray-100 dark:bg-[color:rgba(122,31,52,0.2)] dark:text-[var(--aqs-accent-dark)]'
@@ -393,29 +498,20 @@ export function Dropzone({
         </div>
 
         <div
-          role="button"
-          tabIndex={0}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              triggerFilePicker();
-            }
-          }}
-          className={`relative mt-4 block w-full rounded-[1.6rem] border-2 p-5 transition-all duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[color:rgba(122,31,52,0.18)] ${
+          className={`relative mt-4 block w-full rounded-[1.6rem] border-2 p-5 transition-all duration-200 focus-within:outline-none focus-within:ring-4 focus-within:ring-[color:rgba(122,31,52,0.18)] ${
             isDragging
               ? 'border-[var(--aqs-accent)] bg-[var(--aqs-accent-soft)] dark:bg-[color:rgba(122,31,52,0.2)]'
               : 'border-gray-900 bg-gray-50 dark:border-gray-100 dark:bg-gray-950'
           }`}
         >
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handleFileChange}
+          <button
+            type="button"
             aria-label="Upload image"
-            className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
+            onClick={triggerFilePicker}
+            className="absolute inset-y-0 left-0 right-20 z-10 cursor-pointer rounded-[1.6rem] border-0 bg-transparent p-0"
           />
           <div className="pointer-events-none relative z-0 flex items-center gap-4">
             <div className="flex h-14 w-14 items-center justify-center rounded-[1.2rem] border-2 border-gray-900 bg-[var(--aqs-accent-soft)] text-[var(--aqs-accent)] neo-shadow-sm dark:border-gray-100 dark:bg-[color:rgba(122,31,52,0.2)] dark:text-[var(--aqs-accent-dark)]">
