@@ -42,7 +42,7 @@ export function DictionaryResult({ entries }: DictionaryResultProps) {
                       className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
                       title="Play pronunciation"
                     >
-                      <Volume2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                      <Volume2 className="w-5 h-5 text-[var(--aqs-accent)] dark:text-[var(--aqs-accent-dark)]" />
                     </button>
                   ),
               )}
@@ -51,7 +51,7 @@ export function DictionaryResult({ entries }: DictionaryResultProps) {
             {/* Meanings */}
             {entry.meanings.map((meaning) => (
               <div key={`${meaning.partOfSpeech}-${entry.word}`} className="mb-4">
-                <span className="inline-block text-xs font-bold font-mono uppercase px-2 py-1 rounded bg-indigo-100 text-indigo-900 dark:bg-indigo-900 dark:text-indigo-100 border border-indigo-900 dark:border-indigo-100 mb-2">
+                <span className="mb-2 inline-block rounded border border-[var(--aqs-accent)] bg-[var(--aqs-accent-soft)] px-2 py-1 text-xs font-bold font-mono uppercase text-[var(--aqs-accent-strong)] dark:border-[var(--aqs-accent-dark)] dark:bg-[color:rgba(122,31,52,0.2)] dark:text-[var(--aqs-accent-dark)]">
                   {meaning.partOfSpeech}
                 </span>
                 <ol className="list-decimal list-inside space-y-2 ml-2">

@@ -1,25 +1,61 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { UploadCloud, Mic, Square, Type, ImageIcon } from 'lucide-react';
+import { Mic, Square, UploadCloud } from 'lucide-react';
+import { shouldSubmitTextShortcut } from '../utils/input';
+import { transcribeAudio } from '../services/gemini';
 
 interface DropzoneProps {
   onImageSelected: (file: File) => void;
   onTextPasted: (text: string) => void;
+  onQuickSubmit?: (text: string) => void;
   onError: (msg: string) => void;
   onVoiceInput?: (text: string) => void;
 }
 
-export function Dropzone({ onImageSelected, onTextPasted, onError, onVoiceInput }: DropzoneProps) {
+function isEditableTarget(target: EventTarget | null) {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable ||
+      target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.tagName === 'SELECT')
+  );
+}
+
+export function Dropzone({
+  onImageSelected,
+  onTextPasted,
+  onQuickSubmit,
+  onError,
+  onVoiceInput,
+}: DropzoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState("");
   const [textInput, setTextInput] = useState('');
-  const [inputMode, setInputMode] = useState<'text' | 'image'>('text');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+  const recordingTimeoutRef = useRef<number | null>(null);
+
+  const cleanupMediaStream = useCallback(() => {
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
+  }, []);
+
+  const clearRecordingTimeout = useCallback(() => {
+    if (recordingTimeoutRef.current !== null) {
+      window.clearTimeout(recordingTimeoutRef.current);
+      recordingTimeoutRef.current = null;
+    }
+  }, []);
 
   const handlePaste = useCallback((e: ClipboardEvent) => {
     const items = e.clipboardData?.items;
     if (!items) return;
 
+    const editableTarget = isEditableTarget(e.target);
     let foundImage = false;
     for (let i = 0; i < items.length; i++) {
       if (items[i].type.startsWith('image/')) {
@@ -33,6 +69,10 @@ export function Dropzone({ onImageSelected, onTextPasted, onError, onVoiceInput 
     }
 
     if (!foundImage) {
+      if (editableTarget) {
+        return;
+      }
+
       const textData = e.clipboardData?.getData('text');
       if (textData) {
         setTextInput(textData);
@@ -78,210 +118,350 @@ export function Dropzone({ onImageSelected, onTextPasted, onError, onVoiceInput 
     if (files && files.length > 0) {
       onImageSelected(files[0]);
     }
+    e.target.value = '';
   };
 
-  const handleTextSubmit = () => {
+  const handleTextSubmit = (submitFast = true) => {
     const text = textInput.trim();
     if (text) {
+      if (submitFast && onQuickSubmit) {
+        onQuickSubmit(text);
+        return;
+      }
+
       onTextPasted(text);
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    if (shouldSubmitTextShortcut({
+      isComposing: e.nativeEvent.isComposing,
+      key: e.key,
+      shiftKey: e.shiftKey,
+    })) {
       e.preventDefault();
       handleTextSubmit();
     }
   };
 
-  const startListening = useCallback(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      onError("Speech recognition is not supported in your browser. Try Chrome or Edge.");
+  const startRecordingFallback = useCallback(async () => {
+    if (isTranscribing || isListening) {
       return;
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = 'en-US';
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      onError("Voice input is not supported in this browser.");
+      return;
+    }
 
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      const transcript = event.results[0]?.[0]?.transcript;
-      if (transcript && onVoiceInput) {
-        onVoiceInput(transcript);
-      }
-      setIsListening(false);
-    };
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      onError("Microphone access is blocked. Allow microphone permission in your browser and try again.");
+      return;
+    }
 
-    recognition.onerror = () => {
-      setIsListening(false);
-      onError("Could not understand audio. Please try again.");
-    };
+    const preferredMimeTypes = [
+      'audio/ogg;codecs=opus',
+      'audio/webm;codecs=opus',
+      'audio/ogg',
+      'audio/webm',
+    ];
+    const mimeType = preferredMimeTypes.find((type) => MediaRecorder.isTypeSupported?.(type)) ?? '';
 
-    recognition.onend = () => {
-      setIsListening(false);
-    };
+    try {
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      mediaStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      recordedChunksRef.current = [];
 
-    recognitionRef.current = recognition;
-    recognition.start();
-    setIsListening(true);
-  }, [onError, onVoiceInput]);
+      recorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data.size > 0) {
+          recordedChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onerror = () => {
+        clearRecordingTimeout();
+        cleanupMediaStream();
+        mediaRecorderRef.current = null;
+        setIsListening(false);
+        setIsTranscribing(false);
+        setVoiceStatus("");
+        onError("Voice recording failed. Try again or check microphone permissions.");
+      };
+
+      recorder.onstop = async () => {
+        clearRecordingTimeout();
+        const chunks = [...recordedChunksRef.current];
+        recordedChunksRef.current = [];
+        const outputMimeType = recorder.mimeType || mimeType || 'audio/webm';
+
+        cleanupMediaStream();
+        mediaRecorderRef.current = null;
+        setIsListening(false);
+
+        if (!chunks.length) {
+          setIsTranscribing(false);
+          setVoiceStatus("");
+          onError("No speech was captured. Try again and speak a little closer to the microphone.");
+          return;
+        }
+
+        setIsTranscribing(true);
+        setVoiceStatus("Transcribing...");
+        try {
+          const transcript = await transcribeAudio(new Blob(chunks, { type: outputMimeType }));
+          if (!transcript) {
+            throw new Error("Empty transcript");
+          }
+
+          setIsTranscribing(false);
+          setVoiceStatus("");
+          onVoiceInput?.(transcript);
+        } catch {
+          setIsTranscribing(false);
+          setVoiceStatus("");
+          onError("Voice transcription failed. Try a shorter recording and speak clearly.");
+        }
+      };
+
+      recorder.start(250);
+      setIsListening(true);
+      setVoiceStatus("Recording... tap the mic again to finish.");
+      recordingTimeoutRef.current = window.setTimeout(() => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+          mediaRecorderRef.current.stop();
+        }
+      }, 45000);
+    } catch {
+      cleanupMediaStream();
+      onError("Voice recording could not start in this browser.");
+    }
+  }, [cleanupMediaStream, clearRecordingTimeout, isListening, isTranscribing, onError, onVoiceInput]);
 
   const stopListening = useCallback(() => {
-    recognitionRef.current?.stop();
-    setIsListening(false);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+      setVoiceStatus("Transcribing...");
+      return;
+    }
   }, []);
 
-  return (
-    <div className="space-y-4">
-      {/* Mode Toggle */}
-      <div className="flex justify-center gap-2">
-        <button
-          type="button"
-          onClick={() => setInputMode('text')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl border-2 font-medium transition-all min-h-[44px] ${
-            inputMode === 'text'
-              ? 'bg-indigo-600 text-white border-indigo-600'
-              : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-900 dark:border-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700'
-          }`}
-        >
-          <Type className="w-4 h-4" />
-          <span className="hidden sm:inline">Type Question</span>
-          <span className="sm:hidden">Type</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setInputMode('image')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl border-2 font-medium transition-all min-h-[44px] ${
-            inputMode === 'image'
-              ? 'bg-indigo-600 text-white border-indigo-600'
-              : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-900 dark:border-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700'
-          }`}
-        >
-          <ImageIcon className="w-4 h-4" />
-          <span className="hidden sm:inline">Upload Image</span>
-          <span className="sm:hidden">Upload</span>
-        </button>
-      </div>
+  useEffect(() => {
+    return () => {
+      clearRecordingTimeout();
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      cleanupMediaStream();
+    };
+  }, [cleanupMediaStream, clearRecordingTimeout]);
 
-      {/* Text Input Mode */}
-      {inputMode === 'text' && (
-        <div className="space-y-4">
-          <div className="bg-white dark:bg-gray-900 rounded-xl border-2 border-gray-900 dark:border-gray-100 neo-shadow overflow-hidden">
-            <textarea
-              value={textInput}
-              onChange={(e) => setTextInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="What do you need help with? Type your question here..."
-              className="w-full min-h-[120px] max-h-[300px] p-4 bg-transparent text-gray-900 dark:text-gray-100 font-mono text-base resize-y focus:outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
-            />
-          </div>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+  const triggerFilePicker = () => {
+    const input = fileInputRef.current;
+    if (!input) {
+      return;
+    }
+
+    input.value = "";
+    if (typeof input.showPicker === "function") {
+      input.showPicker();
+      return;
+    }
+
+    input.click();
+  };
+
+  return (
+    <div className="space-y-5">
+      <input
+        id="file-input"
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        accept="image/*"
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden="true"
+      />
+
+      <div className="hidden md:block">
+        <div className="relative">
+          {onVoiceInput && (
             <button
               type="button"
-              onClick={handleTextSubmit}
-              disabled={!textInput.trim()}
-              className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold bg-indigo-600 text-white border-2 border-indigo-600 hover:bg-indigo-700 transition-all neo-shadow disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void (isListening ? stopListening() : startRecordingFallback());
+              }}
+              aria-label={isListening ? 'Stop voice recording' : isTranscribing ? 'Transcribing voice input' : 'Start voice recording'}
+              title={isListening ? 'Stop voice recording' : isTranscribing ? 'Transcribing voice input' : 'Start voice recording'}
+              disabled={isTranscribing}
+              className={`absolute right-6 top-6 z-10 inline-flex h-16 w-16 items-center justify-center rounded-full border-2 neo-shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-70 ${
+                isListening
+                  ? 'border-[var(--aqs-accent-strong)] bg-[var(--aqs-accent)] text-white'
+                  : 'border-gray-900 bg-[var(--aqs-accent-soft)] text-[var(--aqs-accent)] dark:border-gray-100 dark:bg-[color:rgba(122,31,52,0.2)] dark:text-[var(--aqs-accent-dark)]'
+              }`}
             >
-              Submit Question
+              {isListening ? <Square className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
             </button>
-            {onVoiceInput && (
-              <button
-                type="button"
-                onClick={isListening ? stopListening : startListening}
-                className={`flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold transition-all border-2 min-h-[44px] ${
-                  isListening
-                    ? 'bg-red-500 text-white border-red-500 hover:bg-red-600'
-                    : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-900 dark:border-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700'
-                }`}
-              >
-                {isListening ? (
-                  <>
-                    <Square className="w-4 h-4" />
-                    <span className="hidden sm:inline">Stop Listening</span>
-                    <span className="sm:hidden">Stop</span>
-                  </>
-                ) : (
-                  <>
-                    <Mic className="w-4 h-4" />
-                    <span className="hidden sm:inline">Voice Input</span>
-                    <span className="sm:hidden">Voice</span>
-                  </>
-                )}
-              </button>
-            )}
-          </div>
-          <p className="text-center text-sm text-gray-500 dark:text-gray-400 font-mono">
-            Press <kbd className="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-600">Cmd+Enter</kbd> to submit
-          </p>
-        </div>
-      )}
-
-      {/* Image Upload Mode */}
-      {inputMode === 'image' && (
-        <>
-          <label
-            htmlFor="file-input"
-            className={`block border-2 rounded-xl p-8 sm:p-12 text-center cursor-pointer transition-all duration-200 min-h-[200px] sm:min-h-[300px] neo-shadow ${
-              isDragging
-                ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 translate-x-[2px] translate-y-[2px] shadow-none'
-                : 'border-gray-900 dark:border-gray-100 bg-white dark:bg-gray-900 hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_rgba(17,24,39,1)] dark:hover:shadow-[6px_6px_0px_0px_rgba(243,244,246,1)]'
-            }`}
+          )}
+          <div
+            role="button"
+            tabIndex={0}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                triggerFilePicker();
+              }
+            }}
+            className={`relative block w-full cursor-pointer overflow-hidden rounded-[2.2rem] border-2 px-8 py-14 text-center transition-all duration-200 neo-shadow focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[color:rgba(122,31,52,0.18)] ${
+              isDragging
+                ? 'border-[var(--aqs-accent)] bg-[var(--aqs-accent-soft)] translate-x-[2px] translate-y-[2px] shadow-none dark:bg-[color:rgba(122,31,52,0.2)]'
+                : 'border-gray-900 bg-white hover:-translate-y-1 dark:border-gray-100 dark:bg-gray-900'
+            }`}
           >
             <input
-              id="file-input"
               type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
               accept="image/*"
-              className="hidden"
+              onChange={handleFileChange}
+              aria-label="Upload image"
+              className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
             />
-            <div className="bg-indigo-100 dark:bg-indigo-900/50 p-4 rounded-xl border-2 border-gray-900 dark:border-gray-100 neo-shadow-sm mb-4 inline-block">
-              <UploadCloud className="w-8 h-8 text-indigo-600 dark:text-indigo-400" />
-            </div>
-            <h3 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2 font-sans tracking-tight">
-              Paste, drop, or click
-            </h3>
-            <p className="text-gray-600 dark:text-gray-400 font-mono text-sm">
-              to upload a question image
-            </p>
-            <div className="mt-4 flex items-center justify-center gap-2 text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 px-4 py-2 rounded-lg border-2 border-gray-900 dark:border-gray-100 neo-shadow-sm">
-              <span className="font-mono font-bold bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-900 dark:text-gray-100">Cmd+V</span>
-              <span className="font-mono">works anywhere on page</span>
-            </div>
-          </label>
 
-          {onVoiceInput && (
-            <div className="flex justify-center">
-              <button
-                type="button"
-                onClick={isListening ? stopListening : startListening}
-                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all border-2 min-h-[44px] ${
-                  isListening
-                    ? 'bg-red-500 text-white border-red-500 hover:bg-red-600'
-                    : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-900 dark:border-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700'
-                }`}
-              >
-                {isListening ? (
-                  <>
-                    <Square className="w-4 h-4" />
-                    <span>Stop Listening</span>
-                  </>
-                ) : (
-                  <>
-                    <Mic className="w-4 h-4" />
-                    <span>Voice Input</span>
-                  </>
-                )}
-              </button>
+            <div className="pointer-events-none relative z-0">
+              <div className="mx-auto mb-7 flex h-28 w-28 items-center justify-center rounded-[2rem] border-2 border-gray-900 bg-[var(--aqs-accent-soft)] text-[var(--aqs-accent)] neo-shadow-sm dark:border-gray-100 dark:bg-[color:rgba(122,31,52,0.2)] dark:text-[var(--aqs-accent-dark)]">
+                <UploadCloud className="h-10 w-10" />
+              </div>
+
+              <h2 className="mx-auto max-w-4xl text-4xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
+                Start typing anywhere, paste an image, or click to upload.
+              </h2>
+
+              <div className="mx-auto mt-8 inline-flex max-w-3xl flex-wrap items-center justify-center gap-3 rounded-full border-2 border-gray-900 bg-white px-5 py-3 font-mono text-sm text-gray-600 neo-shadow-sm dark:border-gray-100 dark:bg-gray-950 dark:text-gray-300">
+                <span className="rounded-xl bg-[var(--aqs-accent-soft)] px-3 py-1 font-bold text-[var(--aqs-accent-strong)] dark:bg-[color:rgba(122,31,52,0.22)] dark:text-[var(--aqs-accent-dark)]">
+                  Cmd+V
+                </span>
+                <span>Type to open the question box, or paste a screenshot with Cmd+V.</span>
+              </div>
+              {voiceStatus && (
+                <div className="mx-auto mt-4 max-w-2xl font-mono text-sm text-[var(--aqs-accent-strong)] dark:text-[var(--aqs-accent-dark)]">
+                  {voiceStatus}
+                </div>
+              )}
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-[2rem] border-2 border-gray-900 bg-white p-5 neo-shadow dark:border-gray-100 dark:bg-gray-900 md:hidden">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
+              Type, paste, or upload fast.
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+              Press Enter to ask fast. Shift+Enter for a new line.
+            </p>
+          </div>
+          {onVoiceInput && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void (isListening ? stopListening() : startRecordingFallback());
+              }}
+              aria-label={isListening ? 'Stop voice recording' : isTranscribing ? 'Transcribing voice input' : 'Start voice recording'}
+              title={isListening ? 'Stop voice recording' : isTranscribing ? 'Transcribing voice input' : 'Start voice recording'}
+              disabled={isTranscribing}
+              className={`inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 neo-shadow-sm transition disabled:cursor-not-allowed disabled:opacity-70 ${
+                isListening
+                  ? 'border-[var(--aqs-accent-strong)] bg-[var(--aqs-accent)] text-white'
+                  : 'border-gray-900 bg-[var(--aqs-accent-soft)] text-[var(--aqs-accent)] dark:border-gray-100 dark:bg-[color:rgba(122,31,52,0.2)] dark:text-[var(--aqs-accent-dark)]'
+              }`}
+            >
+              {isListening ? <Square className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+            </button>
           )}
-        </>
-      )}
+        </div>
+
+        <div
+          role="button"
+          tabIndex={0}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              triggerFilePicker();
+            }
+          }}
+          className={`relative mt-4 block w-full rounded-[1.6rem] border-2 p-5 transition-all duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[color:rgba(122,31,52,0.18)] ${
+            isDragging
+              ? 'border-[var(--aqs-accent)] bg-[var(--aqs-accent-soft)] dark:bg-[color:rgba(122,31,52,0.2)]'
+              : 'border-gray-900 bg-gray-50 dark:border-gray-100 dark:bg-gray-950'
+          }`}
+        >
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleFileChange}
+            aria-label="Upload image"
+            className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
+          />
+          <div className="pointer-events-none relative z-0 flex items-center gap-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-[1.2rem] border-2 border-gray-900 bg-[var(--aqs-accent-soft)] text-[var(--aqs-accent)] neo-shadow-sm dark:border-gray-100 dark:bg-[color:rgba(122,31,52,0.2)] dark:text-[var(--aqs-accent-dark)]">
+              <UploadCloud className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="font-bold text-gray-900 dark:text-gray-100">Tap to upload a screenshot</div>
+              <div className="mt-1 font-mono text-xs text-gray-500 dark:text-gray-400">Cmd+V also works</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-2xl border-2 border-gray-900 bg-white p-1 dark:border-gray-100 dark:bg-gray-950">
+          <textarea
+            value={textInput}
+            onChange={(e) => setTextInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Type or paste your question here."
+            className="min-h-[160px] w-full resize-none rounded-[1.1rem] bg-transparent px-4 py-4 font-mono text-base text-gray-900 outline-none placeholder:text-gray-400 dark:text-gray-100 dark:placeholder:text-gray-500"
+          />
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-3">
+          <button
+            type="button"
+            onClick={() => handleTextSubmit()}
+            disabled={!textInput.trim()}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border-2 border-[var(--aqs-accent)] bg-[var(--aqs-accent)] px-5 py-3 font-bold text-white neo-shadow-sm transition hover:bg-[var(--aqs-accent-strong)] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Ask Fast
+          </button>
+          <button
+            type="button"
+            onClick={() => handleTextSubmit(false)}
+            disabled={!textInput.trim()}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border-2 border-gray-900 bg-white px-5 py-3 font-bold text-gray-900 neo-shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-100 dark:bg-gray-900 dark:text-gray-100"
+          >
+            Review Options
+          </button>
+        </div>
+        {voiceStatus && (
+          <div className="mt-3 font-mono text-sm text-[var(--aqs-accent-strong)] dark:text-[var(--aqs-accent-dark)]">
+            {voiceStatus}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

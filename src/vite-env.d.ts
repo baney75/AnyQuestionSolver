@@ -2,6 +2,9 @@
 
 interface ImportMetaEnv {
   readonly GEMINI_API_KEY: string;
+  readonly GEMINI_FAST_MODEL?: string;
+  readonly GEMINI_GROUNDED_MODEL?: string;
+  readonly GEMINI_PRO_MODEL?: string;
   readonly GOOGLE_API_KEY?: string;
 }
 

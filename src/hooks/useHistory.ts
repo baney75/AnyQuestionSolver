@@ -14,20 +14,24 @@ export function useHistory() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setItems(JSON.parse(raw));
+      if (!raw) return;
+
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setItems(parsed.slice(0, MAX_ITEMS));
+      }
     } catch {
       /* corrupted data — start fresh */
     }
   }, []);
 
-  const push = useCallback(
-    (item: HistoryItem) => {
-      const next = [item, ...items].slice(0, MAX_ITEMS);
-      setItems(next);
+  const push = useCallback((item: HistoryItem) => {
+    setItems((current) => {
+      const next = [item, ...current].slice(0, MAX_ITEMS);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    },
-    [items],
-  );
+      return next;
+    });
+  }, []);
 
   const clear = useCallback(() => {
     setItems([]);

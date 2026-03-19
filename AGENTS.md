@@ -4,27 +4,71 @@
 
 ### Overview
 
-AnyQuestionSolver is a client-side React + Vite SPA that uses Google Gemini AI to solve academic questions. There is no backend server despite `express` and `better-sqlite3` being listed in `package.json` (unused AI Studio template artifacts).
+AnyQuestionSolver is a client-side React + Vite SPA for academic help. It accepts typed questions, pasted text, screenshots, and follow-up chat prompts, then calls Google Gemini directly from the browser. There is no backend server.
+
+### Product behavior
+
+- Default path: text entry submits with the `fast` model when the user presses `Enter`
+- `Shift+Enter` inserts a new line in the text composer
+- Text pasted outside an editable field opens preview/options; text pasted into the textarea should stay in the textarea
+- Image uploads and pasted screenshots go to preview first
+- Voice input should transcribe into preview so the user can confirm/edit before sending if needed
+- If an image or pasted text already shows a worked solution or partial attempt, the app should proactively check that work and continue tutoring without a separate "grade my work" mode
+- Preview options should stay limited to `fast` and `deep`; grounded/source-backed research is automatic when the question requires it
+- Grounded answers should render sources in the app's custom source-card UI, not as a raw markdown dump
+- Rich responses may include inline media markers for images, videos, definitions, and curated link blocks; those markers must render in both the main answer and follow-up replies
+- Solved screens and follow-up chat should expose retry/edit affordances in the app's existing maroon neo-shadow style, not browser-default UI
 
 ### Running the app
 
-- `bun dev` starts the Vite dev server on port 3000 (host 0.0.0.0)
-- `bun build` creates a production build in `dist/`
-- `bun lint` runs `tsc --noEmit` for type checking
-- Tests: `bun test src/utils/image.test.ts` (uses Bun's built-in test runner)
+- `bun install` installs dependencies
+- `bun dev` starts the Vite dev server on port `3000` with host `0.0.0.0`
+- `bun run build` creates a production build in `dist/`
+- `bun lint` runs `tsc --noEmit`
+- `bun test src/utils/image.test.ts src/utils/input.test.ts src/utils/solution.test.ts src/services/gemini.test.ts` runs the current Bun unit tests
+
+### Verification requirements
+
+After code changes, run all of the following unless the task makes one impossible:
+
+- `bun lint`
+- `bun test src/utils/image.test.ts src/utils/input.test.ts src/utils/solution.test.ts src/services/gemini.test.ts`
+- `bun run build`
+
+If UI code changed, also smoke-test the app in a browser and check for:
+
+- console errors
+- broken keyboard behavior
+- clipped or overlapping layouts at mobile and desktop widths
+- missing focus states
 
 ### Environment
 
-- Requires `GEMINI_API_KEY` in `.env.local` for AI functionality. Vite exposes it to client code via `import.meta.env.GEMINI_API_KEY` (configured in `vite.config.ts` via `envPrefix`).
-- If `GEMINI_API_KEY` is available as a shell environment variable, write it to `.env.local` before starting the dev server: `echo "GEMINI_API_KEY=\"$GEMINI_API_KEY\"" > .env.local`
-- `GOOGLE_API_KEY` can also be set for search/video functionality (falls back to GEMINI_API_KEY if not set)
+- Requires `GEMINI_API_KEY` in `.env.local` for AI functionality
+- Optional model overrides:
+  - `GEMINI_FAST_MODEL`
+  - `GEMINI_GROUNDED_MODEL`
+  - `GEMINI_PRO_MODEL`
+- `GOOGLE_API_KEY` is optional for Google-backed web/video search features
+- Image rendering has public fallbacks (Openverse and Wikimedia), so image cards should still try to render even when `GOOGLE_API_KEY` is missing or Google image search is unavailable
+- Vite exposes these values via `import.meta.env` because `vite.config.ts` uses `envPrefix: ['VITE_', 'GEMINI_', 'GOOGLE_']`
+
+If `GEMINI_API_KEY` already exists in the shell, write `.env.local` with:
+
+```bash
+echo 'GEMINI_API_KEY="'"$GEMINI_API_KEY"'"' > .env.local
+```
 
 ### Gotchas
 
-- The `.env.local` file is gitignored but required at runtime. Vite reads it automatically with the `envPrefix: ['VITE_', 'GEMINI_', 'GOOGLE_']` config.
-- Changing `.env.local` requires restarting the Vite dev server for changes to take effect (not hot-reloaded).
-- The app makes Gemini API calls directly from the browser (no server proxy), so the API key is exposed in the client bundle.
-- The free-tier Gemini API key has strict per-model rate limits. If the pro model quota is exhausted, the chat feature (which uses a lighter model) should still work. Wait ~45s between requests if you hit rate limits.
+- `.env.local` is required at runtime and is not hot-reloaded; restart `bun dev` after changing it
+- The Gemini key is shipped to the client bundle in this architecture
+- Rate limits happen quickly on free tiers; if `deep` or `research` hits quota, retry with `fast`
+- The app auto-upgrades to grounded or Pro-tier model routing for source-sensitive or complex prompts, so a `fast` click does not always mean the cheapest model was used
+- Media search falls back across multiple search paths when possible; if live images/videos still do not resolve, check `GOOGLE_API_KEY`, API enablement, and quota before changing UI code
+- KaTeX styles are already bundled through npm imports; do not add redundant CDN stylesheets in `index.html`
+- Prefer `%BASE_URL%...` paths for static icons and manifests in `index.html`
+- The Web Speech API still depends on browser support and microphone permission. Test voice on real Chrome/Edge over `localhost` or HTTPS.
 
 ---
 
@@ -33,56 +77,61 @@ AnyQuestionSolver is a client-side React + Vite SPA that uses Google Gemini AI t
 ### ALWAYS follow these rules when editing code:
 
 1. **Type Safety**: All TypeScript code must pass `tsc --noEmit` without errors
-2. **Accessibility**: 
-   - All buttons must have `type="button"` 
+2. **Accessibility**:
+   - All buttons must have `type="button"`
    - Labels must be associated with inputs via `htmlFor` or wrapping
    - Interactive elements must be keyboard-accessible
    - No `aria-hidden` on focusable elements
-3. **No Unused Code**: Remove unused imports, functions, variables, and files
-4. **Imports**: Group imports: React -> external libraries -> internal modules -> types
-5. **Component Structure**: Keep components small and focused; extract reusable logic to hooks
-6. **State Management**: Use `useCallback` for handlers passed to children; include all dependencies
-7. **Error Handling**: Always handle async errors with try/catch and user-friendly messages
+3. **No Unused Code**: Remove unused imports, functions, variables, dead UI paths, and template artifacts
+4. **Imports**: Group imports as React -> external libraries -> internal modules -> types
+5. **Component Structure**: Keep components focused; extract reusable logic when a component starts carrying multiple responsibilities
+6. **State Management**: Prefer functional state updates whenever the next value depends on the current value
+7. **Error Handling**: Handle async failures with `try/catch` and user-friendly messages
+8. **Helpful UX First**: Prefer proactive behavior over extra toggles and modes when the user intent can be inferred safely
 
-### Linting
+### Current UX expectations
 
-Run `bun lint` before committing. Fix ALL errors before pushing.
+- `fast` is the primary CTA and the default quick-submit path
+- `deep` is for longer walkthroughs, not a separate product branch
+- Grounded, source-backed answers should be triggered automatically for prompts that ask for current information, citations, evidence, or research
+- When grounding is active, prefer `.edu`, `.gov`, peer-reviewed, official, and other academically credible sources
+- For scholarly questions, rank peer-reviewed journals, universities, government agencies, and primary research above general web pages
+- For news/current-events questions, rank Reuters, AP, BBC, PBS, NPR, and primary official statements above commentary or opinion-heavy outlets
+- Treat tertiary references like Wikipedia/Britannica and advocacy or think-tank sources as fallback-only, not preferred evidence
+- Do not reintroduce a dedicated "grade my work" feature unless the user explicitly asks for it
 
 ---
 
 ## Dynamic Image Search Protocol
 
-**Goal:** Fulfill user requests for visuals (e.g., "Show me the Burj Khalifa") without incurring storage costs, while ensuring links do not break.
+**Goal:** Fulfill user requests for visuals without local storage overhead while keeping rendering resilient.
 
 ### Phase 1: Source Selection
 
-When the user asks for an image, classify the request and choose the correct Tool/API:
+When the user asks for an image, classify the request and choose the correct source:
 
 | User Request Type | Example | Recommended Source | Why? |
 | :--- | :--- | :--- | :--- |
-| **Vibe / Generic** | "Show me a futuristic city", "A cute cat" | **Unsplash / Pexels API** | High quality, guaranteed hotlinking, free bandwidth. |
-| **Specific Entity** | "Burj Khalifa", "Elon Musk", "iPhone 15" | **Google Custom Search API** | Finds exact real-world objects. |
-| **Diagrams/UI** | "React Logo", "Flowchart icon" | **Local Assets / Base64** | (See ImageRenderer component) |
+| **Vibe / Generic** | "Show me a futuristic city", "A cute cat" | **Unsplash / Pexels API** | High-quality, stable hotlinking. |
+| **Specific Entity** | "Burj Khalifa", "Elon Musk", "iPhone 15" | **Google Custom Search API** | More precise for real-world entities. |
+| **Diagrams / UI** | "React logo", "Flowchart icon" | **Local assets / generated markup** | Better control and reliability. |
 
 ### Phase 2: Image Rendering
 
-Use the `ImageRenderer` component for all external images:
+Use the `ImageRenderer` component for remote images:
 
 ```tsx
 import { ImageRenderer } from './components/ImageRenderer';
 
-// Usage with remote image
-<ImageRenderer 
-  src="https://images.unsplash.com/photo-xxx" 
-  alt="Description of image" 
-/>
+<ImageRenderer src="https://images.unsplash.com/photo-xxx" alt="Description of image" />
 ```
 
 The component:
-- Uses `referrerPolicy="no-referrer"` to allow hotlinking from strict sites
-- Shows loading skeleton while image loads
-- Shows fallback UI if image fails to load
-- Supports both local and remote images
+
+- uses `referrerPolicy="no-referrer"`
+- shows a loading skeleton
+- shows a fallback if the image fails
+- supports both remote and local sources
 
 ### Phase 3: Video Rendering
 
@@ -91,9 +140,8 @@ Use the `VideoEmbed` component for YouTube videos:
 ```tsx
 import { VideoEmbed } from './components/VideoEmbed';
 
-// Usage
-<VideoEmbed 
-  videoId="dQw4w9WgXcQ" 
+<VideoEmbed
+  videoId="dQw4w9WgXcQ"
   title="Video Title"
   channelTitle="Channel Name"
 />
@@ -109,8 +157,6 @@ import { VideoEmbed } from './components/VideoEmbed';
 import { searchWeb } from './services/search';
 
 const results = await searchWeb('quantum physics explanation', 10);
-// results.items - array of search results
-// results.totalResults - total number of results
 ```
 
 ### Image Search
@@ -119,68 +165,87 @@ const results = await searchWeb('quantum physics explanation', 10);
 import { searchImages } from './services/search';
 
 const results = await searchImages('solar system diagram', 10);
-// results.items[].image.url - image URL
 ```
 
 ### Video Search
 
 ```tsx
-import { searchVideos, getYouTubeEmbedUrl } from './services/search';
+import { searchVideos } from './services/search';
 
 const results = await searchVideos('calculus tutorial', 10);
-// results.items[].videoId - YouTube video ID
-// results.items[].thumbnail - thumbnail URL
 ```
 
 ---
 
 ## Gemini API Integration
 
-### Research Mode with Grounding
+### Automatic Grounding
 
-The `research` mode uses Google Search grounding for real-time information:
+Google Search grounding should be enabled automatically when the prompt asks for citations, current information, evidence, or research-backed claims:
 
 ```tsx
-// In gemini.ts
-if (mode === "research") {
+if (questionNeedsGrounding) {
   config.tools = [{ googleSearch: {} }];
 }
 ```
 
-Grounded responses include:
-- `webSearchQueries` - search queries used
-- `groundingChunks` - web sources with URIs and titles
-- `groundingSupports` - citations linking text to sources
-
 ### Citation Format
 
-When using grounded responses, format citations as:
+When using grounded responses:
+
 ```markdown
-[1](https://example.com/source1), [2](https://example.com/source2)
+[1], [2], [3]
 ```
+
+The app should render the full source list in its own source-card layout using grounding metadata, not raw markdown links at the bottom.
+The source-selection policy should be intent-aware:
+
+- scholarly / academic prompts: journals, universities, government, official institutions
+- news / current events: Reuters, AP, BBC, PBS, NPR, and primary official statements
+- proxy/aggregator hosts should be normalized back to the real source when possible before scoring or display
+- reject or heavily down-rank forums, homework mills, anonymous Q&A, and opinion-first sources unless nothing better exists
+
+### Media Markers
+
+Gemini responses may emit these client-rendered markers:
+
+```markdown
+[IMAGE_SEARCH: "descriptive image query"]
+[VIDEO_SEARCH: "descriptive YouTube query"]
+[WEB_SEARCH: "descriptive web query"]
+```
+
+The renderer should:
+
+- resolve the best live result it can find
+- fall back cleanly to an external search link instead of a broken placeholder
+- keep these markers out of copied text and follow-up context when passing prior answers back to Gemini
 
 ---
 
 ## Voice Input
 
-The Dropzone component supports voice input via Web Speech API:
+The `Dropzone` supports voice input through the Web Speech API:
 
 ```tsx
 <Dropzone
   onImageSelected={handleImageSelected}
   onTextPasted={handleTextPasted}
+  onQuickSubmit={handleQuickTextSubmit}
   onError={handleError}
-  onVoiceInput={handleTextPasted} // Voice input uses same handler
+  onVoiceInput={handleQuickTextSubmit}
 />
 ```
 
 Voice input:
-- Works in Chrome and Edge (Web Speech API support required)
-- Uses `en-US` language by default
-- Falls back gracefully with error message if unsupported
+
+- works in Chrome and Edge
+- uses `en-US`
+- should fail gracefully with a visible permission/browser message when unsupported
+- should show listening/transcript feedback while active
 
 ---
 
-## Favicon Prompt (for AI regeneration)
+## Favicon Prompt
 
-> A minimalist brain circuit icon, geometric style, indigo (#4F46E5) and white color scheme, on transparent background, clean vector lines, suitable for small sizes (16x16 to 512x512), modern and professional, slight glow effect, centered composition
+> A minimalist brain circuit icon, geometric style, maroon (#7A1F34) and white color scheme, on transparent background, clean vector lines, suitable for small sizes (16x16 to 512x512), modern and professional, subtle academic character, centered composition

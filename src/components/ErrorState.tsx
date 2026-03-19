@@ -12,6 +12,7 @@ export function ErrorState({ message, onRetry, onClear }: ErrorStateProps) {
       <p className="text-red-900 dark:text-red-100 font-bold mb-6 text-lg">{message}</p>
       <div className="flex justify-center gap-4">
         <button
+          type="button"
           onClick={onRetry}
           className="flex items-center gap-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-2 border-gray-900 dark:border-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 px-6 py-2 rounded-lg font-bold transition-all neo-shadow-sm active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
         >
@@ -19,6 +20,7 @@ export function ErrorState({ message, onRetry, onClear }: ErrorStateProps) {
           Retry
         </button>
         <button
+          type="button"
           onClick={onClear}
           className="flex items-center gap-2 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 border-2 border-gray-900 dark:border-gray-100 hover:bg-gray-800 dark:hover:bg-gray-200 px-6 py-2 rounded-lg font-bold transition-all neo-shadow-sm active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
         >

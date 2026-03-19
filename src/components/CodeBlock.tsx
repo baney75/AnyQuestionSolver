@@ -14,10 +14,14 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
 
   const isPython = /^python/i.test(language);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (error) {
+      setOutput(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    }
   };
 
   const handleRun = async () => {
@@ -42,6 +46,7 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
         </span>
         <div className="flex items-center gap-1.5">
           <button
+            type="button"
             onClick={handleCopy}
             className="flex items-center gap-1 px-2 py-0.5 text-xs font-bold rounded-md border border-gray-400 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
           >
@@ -50,6 +55,7 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
           </button>
           {isPython && (
             <button
+              type="button"
               onClick={handleRun}
               disabled={isRunning}
               className="flex items-center gap-1 px-2 py-0.5 text-xs font-bold rounded-md bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 transition-colors"

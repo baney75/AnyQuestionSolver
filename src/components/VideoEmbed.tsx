@@ -52,7 +52,7 @@ export function VideoEmbed({ videoId, title, channelTitle }: VideoEmbedProps) {
           loading="lazy"
         />
         <div className="absolute inset-0 bg-black/30 group-hover:bg-black/40 transition-colors flex items-center justify-center">
-          <div className="bg-red-600 rounded-full p-4 shadow-lg group-hover:scale-110 transition-transform">
+          <div className="rounded-full bg-[var(--aqs-accent)] p-4 shadow-lg transition-transform group-hover:scale-110">
             <Play className="w-8 h-8 text-white fill-white" />
           </div>
         </div>
@@ -67,7 +67,7 @@ export function VideoEmbed({ videoId, title, channelTitle }: VideoEmbedProps) {
         href={`https://www.youtube.com/watch?v=${videoId}`}
         target="_blank"
         rel="noopener noreferrer"
-        className="mt-2 inline-flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+        className="mt-2 inline-flex items-center gap-1 text-xs text-[var(--aqs-accent)] hover:underline dark:text-[var(--aqs-accent-dark)]"
       >
         <ExternalLink className="w-3 h-3" />
         Watch on YouTube

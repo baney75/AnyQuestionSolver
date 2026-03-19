@@ -1,13 +1,13 @@
-import React from "react";
-import { X, BrainCircuit, Zap, Search, PenTool } from "lucide-react";
+import React, { useEffect, useRef } from "react";
+import { BrainCircuit, X, Zap } from "lucide-react";
 import type { SolveMode } from "../types";
+import { shouldSubmitTextShortcut } from "../utils/input";
 
 interface InputPreviewProps {
   imagePreviewUrl: string | null;
   textInput: string | null;
-  imageFile: File | null;
+  onTextChange: (text: string) => void;
   onSolve: (mode: SolveMode) => void;
-  onGrade: () => void;
   onClear: () => void;
 }
 
@@ -17,11 +17,26 @@ const BTN_BASE =
 export function InputPreview({
   imagePreviewUrl,
   textInput,
-  imageFile,
+  onTextChange,
   onSolve,
-  onGrade,
   onClear,
 }: InputPreviewProps) {
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!textInput || imagePreviewUrl) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      textAreaRef.current?.focus();
+      const value = textAreaRef.current?.value ?? "";
+      textAreaRef.current?.setSelectionRange(value.length, value.length);
+    }, 320);
+
+    return () => window.clearTimeout(timer);
+  }, [imagePreviewUrl, textInput]);
+
   return (
     <div className="bg-white dark:bg-gray-900 rounded-xl border-2 border-gray-900 dark:border-gray-100 neo-shadow overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 no-print">
       {/* Header */}
@@ -42,55 +57,58 @@ export function InputPreview({
       <div className="p-6 flex flex-col items-center">
         {/* Image or text preview */}
         {imagePreviewUrl && (
-          <img
-            src={imagePreviewUrl}
-            alt="Question preview"
-            className="max-w-full max-h-[300px] object-contain rounded-lg border-2 border-gray-900 dark:border-gray-100 neo-shadow-sm"
-          />
+          <div className="w-full space-y-5">
+            <div className="rounded-[1.75rem] border-2 border-gray-900 bg-gray-50 p-4 dark:border-gray-100 dark:bg-gray-950">
+              <img
+                src={imagePreviewUrl}
+                alt="Question preview"
+                className="max-h-[420px] w-full object-contain rounded-2xl"
+              />
+            </div>
+            <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">
+              The tutor will inspect the image first. If your work is already shown, it will say what is correct
+              before fixing the first real issue.
+            </p>
+          </div>
         )}
-        {textInput && !imagePreviewUrl && (
-          <div className="w-full bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border-2 border-gray-900 dark:border-gray-100 text-gray-900 dark:text-gray-100 whitespace-pre-wrap font-mono text-sm max-h-[300px] overflow-y-auto neo-shadow-sm">
-            {textInput}
+        {textInput !== null && !imagePreviewUrl && (
+          <div className="w-full space-y-4">
+            <div className="rounded-[1.75rem] border-2 border-gray-900 bg-white p-1 dark:border-gray-100 dark:bg-gray-950">
+              <textarea
+                ref={textAreaRef}
+                value={textInput}
+                onChange={(event) => onTextChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (
+                    shouldSubmitTextShortcut({
+                      isComposing: event.nativeEvent.isComposing,
+                      key: event.key,
+                      shiftKey: event.shiftKey,
+                    })
+                  ) {
+                    event.preventDefault();
+                    onSolve("fast");
+                  }
+                }}
+                placeholder="Type or paste your question here."
+                className="min-h-[220px] w-full resize-y rounded-[1.35rem] bg-transparent px-5 py-5 font-mono text-base text-gray-900 outline-none placeholder:text-gray-400 dark:text-gray-100 dark:placeholder:text-gray-500"
+              />
+            </div>
           </div>
         )}
 
         {/* Solve buttons */}
-        <div className="mt-8 flex flex-col items-center gap-8 w-full">
-          <div className="flex flex-col sm:flex-row flex-wrap justify-center gap-4 w-full">
-            <button type="button" onClick={() => onSolve("deep")} className={`${BTN_BASE} bg-indigo-600 text-white hover:bg-indigo-700`}>
+        <div className="mt-8 flex w-full flex-col items-center gap-5">
+          <div className="flex w-full flex-col justify-center gap-4 sm:flex-row sm:flex-wrap">
+            <button type="button" onClick={() => onSolve("fast")} className={`${BTN_BASE} bg-[var(--aqs-accent)] text-white hover:bg-[var(--aqs-accent-strong)]`}>
+              <Zap className="w-5 h-5 text-[var(--aqs-gold)]" />
+              Ask Fast
+            </button>
+            <button type="button" onClick={() => onSolve("deep")} className={`${BTN_BASE} bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700`}>
               <BrainCircuit className="w-5 h-5" />
-              Deep Solve (Pro)
-            </button>
-            <button type="button" onClick={() => onSolve("fast")} className={`${BTN_BASE} bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700`}>
-              <Zap className="w-5 h-5 text-amber-500" />
-              Fast Solve
-            </button>
-            <button type="button" onClick={() => onSolve("research")} className={`${BTN_BASE} bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700`}>
-              <Search className="w-5 h-5 text-blue-500" />
-              Research
+              Deep Walkthrough
             </button>
           </div>
-
-          {/* Grade-my-work section (only available for image input) */}
-          {imageFile && (
-            <div className="flex flex-col items-center gap-4 pt-8 border-t-2 border-gray-200 dark:border-gray-800 w-full max-w-2xl">
-              <h3 className="font-bold font-sans text-xl text-gray-900 dark:text-gray-100">
-                Check My Work
-              </h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 text-center max-w-md">
-                Get corrections and feedback on your work. The AI will identify mistakes and show the correct solutions.
-              </p>
-
-              <button
-                type="button"
-                onClick={onGrade}
-                className={`${BTN_BASE} bg-emerald-400 dark:bg-emerald-600 text-gray-900 dark:text-white hover:bg-emerald-500 dark:hover:bg-emerald-700`}
-              >
-                <PenTool className="w-5 h-5" />
-                Grade My Work
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </div>

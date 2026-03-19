@@ -2,34 +2,43 @@ import { useState } from "react";
 import {
   Check,
   Copy,
+  PencilLine,
   Printer,
   RefreshCw,
+  RotateCcw,
   X,
 } from "lucide-react";
 import type { SolveMode } from "../types";
+import { getCopyableSolution } from "../utils/solution";
 
 const COPY_FEEDBACK_MS = 2000;
 
 const BTN =
-  "w-full sm:w-auto flex items-center justify-center gap-2 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 border-2 border-gray-900 dark:border-gray-100 px-4 py-2 rounded-lg font-bold transition-all neo-shadow-sm active:translate-x-[2px] active:translate-y-[2px] active:shadow-none";
+  "w-full sm:w-auto flex items-center justify-center gap-2 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 border-2 border-gray-900 dark:border-gray-100 px-4 py-2 rounded-lg font-bold transition-all neo-shadow-sm active:translate-x-[2px] active:translate-y-[2px] active:shadow-none disabled:bg-gray-200 disabled:text-gray-500 disabled:hover:bg-gray-200 disabled:active:translate-x-0 disabled:active:translate-y-0 disabled:active:shadow-[inherit] dark:disabled:bg-gray-700 dark:disabled:text-gray-400 dark:disabled:hover:bg-gray-700";
 
 interface ActionBarProps {
   solution: string;
   lastMode: SolveMode;
+  canRetryEdit: boolean;
   onSolveAgain: (mode: SolveMode, detailed: boolean) => void;
+  onRetry: () => void;
+  onEditRequest: () => void;
   onClear: () => void;
 }
 
 export function ActionBar({
   solution,
   lastMode,
+  canRetryEdit,
   onSolveAgain,
+  onRetry,
+  onEditRequest,
   onClear,
 }: ActionBarProps) {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(solution);
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(getCopyableSolution(solution));
     setCopied(true);
     setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
   };
@@ -53,14 +62,22 @@ export function ActionBar({
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto mt-4 sm:mt-0">
+        <button type="button" onClick={onRetry} disabled={!canRetryEdit} className={BTN}>
+          <RotateCcw className="w-4 h-4" />
+          Retry
+        </button>
+        <button type="button" onClick={onEditRequest} disabled={!canRetryEdit} className={BTN}>
+          <PencilLine className="w-4 h-4" />
+          Edit Request
+        </button>
         <button type="button" onClick={() => onSolveAgain(lastMode, true)} className={BTN}>
           <RefreshCw className="w-4 h-4" />
-          More Detail
+          Explain More
         </button>
         <button
           type="button"
           onClick={onClear}
-          className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 border-2 border-gray-900 dark:border-gray-100 hover:bg-gray-800 dark:hover:bg-gray-200 px-4 py-2 rounded-lg font-bold transition-all neo-shadow-sm active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
+          className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-gray-900 bg-[var(--aqs-accent)] px-4 py-2 font-bold text-white transition-all neo-shadow-sm hover:bg-[var(--aqs-accent-strong)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none dark:border-gray-100 sm:w-auto"
         >
           <X className="w-4 h-4" />
           New Question
