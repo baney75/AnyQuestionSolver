@@ -1,15 +1,27 @@
-import { test, describe, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { test, describe, beforeEach, afterEach, mock } from 'node:test';
+import assert from 'node:assert';
 import { resizeImage } from './image.ts';
 
 describe('resizeImage', () => {
   const originalImage = global.Image;
   const originalDocument = global.document;
   const originalURL = global.URL;
+  const originalFile = global.File;
 
   beforeEach(() => {
     global.URL = {
-      createObjectURL: mock(() => 'blob:http://localhost/mock-blob'),
-      revokeObjectURL: mock(() => {}),
+      createObjectURL: mock.fn(() => 'blob:http://localhost/mock-blob'),
+      revokeObjectURL: mock.fn(() => {}),
+    } as any;
+    global.File = class File {
+      parts: any[];
+      name: string;
+      options: any;
+      constructor(parts: any[], name: string, options: any) {
+        this.parts = parts;
+        this.name = name;
+        this.options = options;
+      }
     } as any;
   });
 
@@ -17,6 +29,7 @@ describe('resizeImage', () => {
     global.Image = originalImage;
     global.document = originalDocument;
     global.URL = originalURL;
+    global.File = originalFile;
   });
 
   function setupMocks({
@@ -30,8 +43,8 @@ describe('resizeImage', () => {
     succeed?: boolean;
     hasContext?: boolean;
   }) {
-    const drawImageMock = mock(() => {});
-    const toDataURLMock = mock(() => 'data:image/jpeg;base64,mockBase64DataUrl');
+    const drawImageMock = mock.fn(() => {});
+    const toDataURLMock = mock.fn(() => 'data:image/jpeg;base64,mockBase64DataUrl');
 
     const canvasMock = {
       width: 0,
@@ -87,10 +100,10 @@ describe('resizeImage', () => {
 
     const result = await resizeImage(file);
 
-    expect(result).toBe('mockBase64DataUrl');
-    expect(canvasMock.width).toBe(1920);
-    expect(canvasMock.height).toBe(1080);
-    expect(drawImageMock).toHaveBeenCalled();
+    assert.strictEqual(result, 'mockBase64DataUrl');
+    assert.strictEqual(canvasMock.width, 1920);
+    assert.strictEqual(canvasMock.height, 1080);
+    assert.strictEqual(drawImageMock.mock.callCount(), 1);
   });
 
   test('should resize image when height exceeds max dimension (1920)', async () => {
@@ -99,10 +112,10 @@ describe('resizeImage', () => {
 
     const result = await resizeImage(file);
 
-    expect(result).toBe('mockBase64DataUrl');
-    expect(canvasMock.width).toBe(540);
-    expect(canvasMock.height).toBe(1920);
-    expect(drawImageMock).toHaveBeenCalled();
+    assert.strictEqual(result, 'mockBase64DataUrl');
+    assert.strictEqual(canvasMock.width, 540);
+    assert.strictEqual(canvasMock.height, 1920);
+    assert.strictEqual(drawImageMock.mock.callCount(), 1);
   });
 
   test('should not resize image if dimensions are below max dimension', async () => {
@@ -111,23 +124,29 @@ describe('resizeImage', () => {
 
     const result = await resizeImage(file);
 
-    expect(result).toBe('mockBase64DataUrl');
-    expect(canvasMock.width).toBe(800);
-    expect(canvasMock.height).toBe(600);
-    expect(drawImageMock).toHaveBeenCalled();
+    assert.strictEqual(result, 'mockBase64DataUrl');
+    assert.strictEqual(canvasMock.width, 800);
+    assert.strictEqual(canvasMock.height, 600);
+    assert.strictEqual(drawImageMock.mock.callCount(), 1);
   });
 
   test('should reject if canvas context is unavailable', async () => {
     setupMocks({ imgWidth: 800, imgHeight: 600, hasContext: false });
     const file = new File([''], 'test.jpg', { type: 'image/jpeg' });
 
-    expect(resizeImage(file)).rejects.toThrow('Failed to get canvas context');
+    await assert.rejects(
+      async () => resizeImage(file),
+      { message: 'Failed to get canvas context' }
+    );
   });
 
   test('should reject if image fails to load', async () => {
     setupMocks({ imgWidth: 800, imgHeight: 600, succeed: false });
     const file = new File([''], 'test.jpg', { type: 'image/jpeg' });
 
-    expect(resizeImage(file)).rejects.toThrow('Failed to load image');
+    await assert.rejects(
+      async () => resizeImage(file),
+      { message: 'Failed to load image' }
+    );
   });
 });
