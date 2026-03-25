@@ -1,6 +1,6 @@
 /**
  * Merriam-Webster Word of the Day service.
- * Uses the official RSS feed first, then falls back to rss2json only when needed.
+ * Uses rss2json first for speed, then falls back to the official RSS feed when needed.
  */
 
 import { fetchFeedXml, stripHtml } from "./rss";

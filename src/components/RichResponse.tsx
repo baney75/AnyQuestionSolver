@@ -48,18 +48,36 @@ function scoreQueryMatch(query: string, ...fields: Array<string | undefined>) {
 }
 
 function chooseBestImageResult(query: string, items: SearchResult[]) {
+  const highTrustHosts = [
+    "wikimedia.org",
+    "wikipedia.org",
+    "britannica.com",
+    "nasa.gov",
+    "nih.gov",
+    "nationalgeographic.com",
+    "pbs.org",
+    "reuters.com",
+    "apnews.com",
+    "unsplash.com",
+    "pexels.com",
+    "openverse.org",
+  ];
+  const lowTrustHosts = ["facebook.", "instagram.", "pinterest.", "tiktok.", "youtube.com"];
   const ranked = items
     .filter((item) => item.image?.url || item.link)
     .map((item) => {
       const url = item.image?.url || item.link;
       let score = scoreQueryMatch(query, item.title, item.snippet, item.displayLink, url);
+      const width = item.image?.width || 0;
+      const height = item.image?.height || 0;
 
-      if (item.displayLink.includes("youtube.com")) score -= 4;
-      if (item.displayLink.includes("pinterest.")) score -= 3;
-      if (item.displayLink.includes("facebook.")) score -= 3;
-      if (item.displayLink.includes("instagram.")) score -= 3;
-      if (url.match(/\.(svg|gif)(\?|$)/i)) score -= 4;
-      if (url.match(/logo|icon|sprite|avatar/i)) score -= 2;
+      if (highTrustHosts.some((host) => item.displayLink.includes(host) || url.includes(host))) score += 3;
+      if (lowTrustHosts.some((host) => item.displayLink.includes(host) || url.includes(host))) score -= 4;
+      if (url.match(/\.(svg|gif)(\?|$)/i)) score -= 5;
+      if (url.match(/logo|icon|sprite|avatar|thumbnail/i)) score -= 2;
+      if (width >= 800 || height >= 800) score += 2;
+      if (width > 0 && height > 0 && Math.min(width, height) < 250) score -= 3;
+      if (item.title.toLowerCase().includes("stock photo")) score -= 1;
 
       return { item, score };
     })

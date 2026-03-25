@@ -42,6 +42,17 @@ export interface NewsArticle {
   directArticleUrl: string;
 }
 
+export interface NewsFeedFailure {
+  source: NewsSource;
+  message: string;
+}
+
+export interface NewsFetchResult {
+  articles: NewsArticle[];
+  failedSources: NewsFeedFailure[];
+  loadedSources: string[];
+}
+
 export const NEWS_SOURCES: NewsSource[] = [
   { name: "Straight Arrow News", url: "https://san.com/feed/", bias: "center", priority: 10, type: "wire" },
   { name: "Tangle", url: "https://www.readtangle.com/archive/rss/", bias: "center", priority: 4, type: "analysis" },
@@ -554,6 +565,30 @@ export async function fetchAllNews(options?: { maxArticles?: number }) {
   return sortArticles(deduplicateArticles(pool)).slice(0, maxArticles);
 }
 
+export async function fetchAllNewsWithStatus(options?: { maxArticles?: number }): Promise<NewsFetchResult> {
+  const { maxArticles = 40 } = options || {};
+  const results = await Promise.allSettled(NEWS_SOURCES.map((source) => fetchSource(source)));
+  const articles = results.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
+  const failedSources = results.flatMap((result, index) => {
+    if (result.status === "fulfilled") {
+      return [];
+    }
+
+    const reason = result.reason instanceof Error ? result.reason.message : "Unknown feed failure";
+    return [{ source: NEWS_SOURCES[index], message: reason }];
+  });
+  const loadedSources = results.flatMap((result, index) => (result.status === "fulfilled" ? [NEWS_SOURCES[index].name] : []));
+
+  const recent = articles.filter(isRecentEnough);
+  const pool = recent.length >= 8 ? recent : articles;
+
+  return {
+    articles: sortArticles(deduplicateArticles(pool)).slice(0, maxArticles),
+    failedSources,
+    loadedSources,
+  };
+}
+
 export function deriveNewsQuery(request: string) {
   const normalized = request
     .replace(/\b(what's|whats|what is|show me|give me|tell me|find me|can you)\b/gi, " ")
@@ -583,6 +618,29 @@ export async function fetchNewsForQuery(query: string, maxArticles = 18) {
     .map((entry) => entry.article);
 
   return ranked.slice(0, maxArticles);
+}
+
+export async function fetchNewsForQueryWithStatus(query: string, maxArticles = 18): Promise<NewsFetchResult> {
+  const result = await fetchAllNewsWithStatus({ maxArticles: 80 });
+  const terms = queryTerms(query);
+
+  if (terms.length === 0) {
+    return {
+      ...result,
+      articles: result.articles.slice(0, maxArticles),
+    };
+  }
+
+  const ranked = result.articles
+    .map((article) => ({ article, score: scoreArticleForQuery(article, terms) }))
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => right.score - left.score)
+    .map((entry) => entry.article);
+
+  return {
+    ...result,
+    articles: ranked.slice(0, maxArticles),
+  };
 }
 
 export function buildNewsReasoningContext(articles: NewsArticle[], query?: string, limit = 5) {

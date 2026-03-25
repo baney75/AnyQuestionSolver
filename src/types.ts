@@ -26,6 +26,9 @@ export interface HistoryItem {
   solution: string;
   type?: 'solve' | 'grade';
   hideAnswerByDefault?: boolean;
+  requestText?: string;
+  subject?: string;
+  mode?: SolveMode;
 }
 
 /** Context passed to AI for feature views (WOTD, News). */

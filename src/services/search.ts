@@ -112,6 +112,9 @@ interface WikipediaQueryResponse {
   };
 }
 
+const DIAGRAM_QUERY_HINT = /\b(diagram|chart|graph|plot|map|formula|equation|molecule|structure|schematic|infographic|logo|icon|flag|timeline|ui|interface)\b/i;
+const PHOTO_QUERY_HINT = /\b(photo|photograph|portrait|headshot|cityscape|landscape|landmark|skyline|animal|person|building|campus|scene)\b/i;
+
 function buildSearchResponse(items: SearchResult[]): SearchResponse {
   return {
     items,
@@ -305,6 +308,8 @@ export async function searchImages(query: string, numResults = 10): Promise<Sear
     return fallbackImageSearch(query, numResults);
   }
 
+  const isDiagramQuery = DIAGRAM_QUERY_HINT.test(query);
+  const isPhotoQuery = PHOTO_QUERY_HINT.test(query) && !isDiagramQuery;
   const params = new URLSearchParams({
     key: GOOGLE_API_KEY,
     cx: SEARCH_ENGINE_ID,
@@ -313,8 +318,10 @@ export async function searchImages(query: string, numResults = 10): Promise<Sear
     safe: 'active',
     searchType: 'image',
     imgSize: 'large',
-    imgType: 'photo',
   });
+  if (isPhotoQuery) {
+    params.set("imgType", "photo");
+  }
 
   const response = await fetch(
     `https://www.googleapis.com/customsearch/v1?${params}`

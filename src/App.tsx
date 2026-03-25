@@ -139,11 +139,11 @@ export default function App() {
 
   const handleOpenNews = useCallback((query?: string) => {
     if (solution && appState === "SOLVED") {
-        setSavedState({
-          solution,
-          hideAnswerByDefault: solutionHideAnswerDefault,
-          chatHistory,
-          mode: lastMode,
+      setSavedState({
+        solution,
+        hideAnswerByDefault: solutionHideAnswerDefault,
+        chatHistory,
+        mode: lastMode,
         subject,
         input: { imageFile: imageFile ?? undefined, textInput: textInput ?? undefined },
       });
@@ -155,10 +155,10 @@ export default function App() {
 
   const handleOpenWotd = useCallback(() => {
     if (solution && appState === "SOLVED") {
-        setSavedState({
-          solution,
-          hideAnswerByDefault: solutionHideAnswerDefault,
-          chatHistory,
+      setSavedState({
+        solution,
+        hideAnswerByDefault: solutionHideAnswerDefault,
+        chatHistory,
         mode: lastMode,
         subject,
         input: { imageFile: imageFile ?? undefined, textInput: textInput ?? undefined },
@@ -293,6 +293,7 @@ export default function App() {
           if (solution && currentAppState.current === "SOLVED") {
             setSavedState({
               solution,
+              hideAnswerByDefault: solutionHideAnswerDefault,
               chatHistory,
               mode: lastMode,
               subject,
@@ -307,6 +308,7 @@ export default function App() {
           if (solution && currentAppState.current === "SOLVED") {
             setSavedState({
               solution,
+              hideAnswerByDefault: solutionHideAnswerDefault,
               chatHistory,
               mode: lastMode,
               subject,
@@ -346,6 +348,9 @@ export default function App() {
           solution: finalSolution,
           type: "solve",
           hideAnswerByDefault: nextHideAnswerByDefault,
+          requestText: trimmedText ?? undefined,
+          subject,
+          mode,
         });
       } catch (err) {
         if (currentTaskIdRef.current !== taskId) {
@@ -368,7 +373,7 @@ export default function App() {
         setAppState("ERROR");
       }
     },
-    [imageFile, textInput, subject, history, solution, chatHistory, lastMode, appState],
+    [imageFile, textInput, subject, history, solution, solutionHideAnswerDefault, chatHistory, lastMode, appState],
   );
 
   const handleSolve = useCallback(
@@ -575,10 +580,15 @@ export default function App() {
   const loadHistoryItem = useCallback((item: HistoryItem) => {
     setSolution(item.solution);
     setSolutionHideAnswerDefault(item.hideAnswerByDefault ?? false);
+    setLastMode(item.mode ?? DEFAULT_SOLVE_MODE);
+    setSubject(item.subject ?? "Auto-detect");
     setAppState("SOLVED");
     setShowHistory(false);
     setImageFile(null);
-    setTextInput(null);
+    setTextInput(item.requestText ?? null);
+    originalQuestionRef.current = {
+      text: item.requestText ?? undefined,
+    };
   }, []);
 
   const hasDraftInput = Boolean(imageFile || textInput?.trim());

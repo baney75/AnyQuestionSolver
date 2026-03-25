@@ -19,10 +19,11 @@ import {
 import {
   NEWS_SOURCES,
   buildNewsReasoningContext,
-  fetchAllNews,
-  fetchNewsForQuery,
+  fetchAllNewsWithStatus,
+  fetchNewsForQueryWithStatus,
   hydrateNewsArticles,
   type NewsArticle,
+  type NewsFeedFailure,
 } from "../services/news";
 import { chatWithTutor } from "../services/gemini";
 import { RichResponse } from "./RichResponse";
@@ -309,6 +310,7 @@ export function NewsView({ initialQuery = "", onClose, onReturn, hasBackgroundTa
   const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "tutor"; text: string }>>([]);
   const [chatInput, setChatInput] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [failedSources, setFailedSources] = useState<NewsFeedFailure[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const loadNews = useCallback(
@@ -320,13 +322,15 @@ export function NewsView({ initialQuery = "", onClose, onReturn, hasBackgroundTa
       }
 
       try {
-        const items = searchQuery.trim()
-          ? await fetchNewsForQuery(searchQuery.trim())
-          : await fetchAllNews();
-        const hydrated = await hydrateNewsArticles(items, 8);
+        const result = searchQuery.trim()
+          ? await fetchNewsForQueryWithStatus(searchQuery.trim())
+          : await fetchAllNewsWithStatus();
+        const hydrated = await hydrateNewsArticles(result.articles, 8);
         setArticles(hydrated);
+        setFailedSources(result.failedSources);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Failed to load news.");
+        setFailedSources([]);
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -584,6 +588,17 @@ ${userMessage}`;
                       <p className="text-xs font-mono uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
                         Every card links to the direct article. Primary-source buttons appear when the feed or article metadata exposes them.
                       </p>
+                      {failedSources.length > 0 ? (
+                        <div className="rounded-2xl border border-amber-300 bg-amber-50/90 px-3 py-3 text-xs leading-6 text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100">
+                          <p className="font-semibold">
+                            Feed coverage is partial right now: {failedSources.length} of {NEWS_SOURCES.length} approved source
+                            {failedSources.length === 1 ? " is" : "s are"} temporarily unavailable.
+                          </p>
+                          <p className="mt-1">
+                            Missing: {failedSources.map((entry) => entry.source.name).join(", ")}
+                          </p>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </aside>
@@ -689,7 +704,7 @@ ${userMessage}`;
                   key={suggestion}
                   type="button"
                   onClick={() => {
-                    setChatInput(suggestion);
+                    setChatInput("");
                     void sendNewsQuestion(suggestion);
                   }}
                   disabled={isChatLoading || filteredArticles.length === 0}
