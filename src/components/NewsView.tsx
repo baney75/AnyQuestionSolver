@@ -219,7 +219,7 @@ function LatestStory({
       <h3 className="mt-3 text-lg font-bold leading-tight text-gray-900 dark:text-white">
         {article.title}
       </h3>
-      <p className="mt-2 line-clamp-3 text-sm leading-6 text-gray-600 dark:text-gray-400">
+      <p className="mt-2 line-clamp-2 text-sm leading-6 text-gray-600 dark:text-gray-400">
         {article.description}
       </p>
       <div className="mt-4 flex items-center justify-between gap-2">
@@ -256,11 +256,11 @@ function StoryCard({
           </div>
         )}
       </div>
-      <div className="space-y-4 p-4">
+      <div className="space-y-3 p-4">
         <ArticleMeta article={article} compact />
         <div>
           <h3 className="text-lg font-bold leading-tight text-gray-900 dark:text-white">{article.title}</h3>
-          <p className="mt-2 line-clamp-4 text-sm leading-6 text-gray-600 dark:text-gray-400">
+          <p className="mt-2 line-clamp-3 text-sm leading-6 text-gray-600 dark:text-gray-400">
             {article.description}
           </p>
         </div>
@@ -457,9 +457,9 @@ ${userMessage}`;
       {hasBackgroundTask && onReturn ? <BackgroundTaskBanner onReturn={onReturn} /> : null}
 
       <section className="overflow-hidden rounded-[2.2rem] border-2 border-gray-900 bg-[linear-gradient(135deg,rgba(122,31,52,0.1),rgba(255,255,255,0.9))] neo-shadow dark:border-gray-100 dark:bg-[linear-gradient(135deg,rgba(122,31,52,0.24),rgba(10,14,25,0.96))]">
-        <div className="border-b-2 border-gray-900 px-5 py-5 dark:border-gray-100 md:px-7 dark:bg-transparent">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div className="space-y-3">
+        <div className="border-b-2 border-gray-900 px-5 py-5 dark:border-gray-100 md:px-8 lg:px-10 dark:bg-transparent">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+            <div className="space-y-4">
               <div className="flex items-center gap-3">
                 {onReturn ? (
                   <button
@@ -478,17 +478,17 @@ ${userMessage}`;
                   <p className="text-xs font-mono font-bold uppercase tracking-[0.28em] text-[var(--aqs-accent-strong)] dark:text-[var(--aqs-accent-dark)]">
                     Verified News Desk
                   </p>
-                  <h1 className="mt-1 text-3xl font-black tracking-tight text-gray-900 dark:text-white md:text-4xl">
+                  <h1 className="mt-1 max-w-4xl text-3xl font-black tracking-tight text-gray-900 dark:text-white md:text-5xl">
                     Latest reporting, direct links, primary references.
                   </h1>
                 </div>
               </div>
-              <p className="max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-300 md:text-base">
-                This view only appears for news requests. It prioritizes the feeds you approved, keeps direct article links visible, and surfaces primary references when the feed or article metadata exposes them.
+              <p className="max-w-4xl text-sm leading-7 text-gray-600 dark:text-gray-300 md:text-lg">
+                A live desk built from your selected feeds. Direct article links stay visible, and upstream references surface when the reporting exposes them.
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
               <button
                 type="button"
                 onClick={() => setShowChat((value) => !value)}
@@ -523,7 +523,7 @@ ${userMessage}`;
             </div>
           </div>
 
-          <form onSubmit={handleSearch} className="mt-6 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+          <form onSubmit={handleSearch} className="mt-6 grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto]">
             <label className="relative block">
               <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
               <input
@@ -542,7 +542,7 @@ ${userMessage}`;
             </button>
           </form>
 
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-5 flex flex-wrap gap-2">
             {NEWS_SOURCES.map((source) => (
               <SourceToggle
                 key={source.name}
@@ -554,7 +554,7 @@ ${userMessage}`;
           </div>
         </div>
 
-        <div className="p-5 md:p-7">
+        <div className="p-5 md:p-7 lg:p-8">
           {loading ? (
             <div className="flex min-h-[280px] flex-col items-center justify-center gap-4">
               <Loader2 className="h-10 w-10 animate-spin text-[var(--aqs-accent)]" />
@@ -580,7 +580,7 @@ ${userMessage}`;
             </div>
           ) : (
             <div className="space-y-8">
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_360px]">
+              <div className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_360px] 2xl:grid-cols-[minmax(0,1.6fr)_380px]">
                 <LeadStory article={leadArticle} onAsk={(article) => void sendNewsQuestion(`Explain this story: ${article.title}`, article)} />
 
                 <aside className="space-y-4">
@@ -640,7 +640,7 @@ ${userMessage}`;
                         More Coverage
                       </p>
                       <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-                        Additional stories from the same live feed set.
+                        Additional reporting from the same live desk.
                       </p>
                     </div>
                     {selectedSources.size > 0 ? (
@@ -653,7 +653,7 @@ ${userMessage}`;
                       </button>
                     ) : null}
                   </div>
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                     {deckArticles.map((article) => (
                       <StoryCard key={article.link} article={article} onAsk={(selectedArticle) => void sendNewsQuestion(`Give me the essentials on this article.`, selectedArticle)} />
                     ))}

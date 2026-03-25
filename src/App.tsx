@@ -670,7 +670,11 @@ export default function App() {
         />
       )}
 
-      <div className="max-w-5xl mx-auto px-4 py-8 md:py-12">
+      <div
+        className={`mx-auto px-4 py-8 md:py-12 ${
+          appState === "NEWS" ? "max-w-[1500px]" : appState === "WOTD" ? "max-w-6xl" : "max-w-5xl"
+        }`}
+      >
         <Header
           darkMode={darkMode}
           onToggleDark={toggleDarkMode}
