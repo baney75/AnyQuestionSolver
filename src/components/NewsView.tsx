@@ -535,7 +535,7 @@ ${userMessage}`;
           {loading ? (
             <div className="flex min-h-[280px] flex-col items-center justify-center gap-4">
               <Loader2 className="h-10 w-10 animate-spin text-[var(--aqs-accent)]" />
-              <p className="text-gray-600 dark:text-gray-300">Loading the latest approved feeds...</p>
+              <p className="text-gray-600 dark:text-gray-300">Fetching news feeds...</p>
             </div>
           ) : error ? (
             <div className="flex min-h-[280px] flex-col items-center justify-center gap-4 rounded-[1.4rem] border-2 border-gray-900 bg-white p-6 dark:border-gray-100 dark:bg-gray-900">
@@ -591,7 +591,7 @@ ${userMessage}`;
                       {failedSources.length > 0 ? (
                         <div className="rounded-2xl border border-amber-300 bg-amber-50/90 px-3 py-3 text-xs leading-6 text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100">
                           <p className="font-semibold">
-                            Feed coverage is partial right now: {failedSources.length} of {NEWS_SOURCES.length} approved source
+                            Feed coverage is partial right now: {failedSources.length} of {NEWS_SOURCES.length} news source
                             {failedSources.length === 1 ? " is" : "s are"} temporarily unavailable.
                           </p>
                           <p className="mt-1">
@@ -612,7 +612,7 @@ ${userMessage}`;
                         More Coverage
                       </p>
                       <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-                        Additional stories from the same approved feed set.
+                        Additional stories from the same live feed set.
                       </p>
                     </div>
                     {selectedSources.size > 0 ? (
