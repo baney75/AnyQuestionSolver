@@ -16,16 +16,16 @@ function getAiClient() {
 
 async function blobToBase64(blob: Blob) {
   const buffer = await blob.arrayBuffer();
-  let binary = "";
   const bytes = new Uint8Array(buffer);
+  const chunks: string[] = [];
   const chunkSize = 0x8000;
 
   for (let index = 0; index < bytes.length; index += chunkSize) {
     const chunk = bytes.subarray(index, index + chunkSize);
-    binary += String.fromCharCode(...chunk);
+    chunks.push(String.fromCharCode.apply(null, chunk as unknown as number[]));
   }
 
-  return btoa(binary);
+  return btoa(chunks.join(""));
 }
 
 const MODEL_CANDIDATES = {
