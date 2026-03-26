@@ -3,10 +3,10 @@ import { searchWeb } from "./search";
 
 const RSS2JSON_API = "https://api.rss2json.com/v1/api.json";
 const ARTICLE_FETCH_TIMEOUT_MS = 18_000;
+const RSS2JSON_TIMEOUT_MS = 10_000;
 const NEWS_CACHE_TTL_MS = 1000 * 60 * 5;
 const ARTICLE_FETCH_FALLBACKS = [
   (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-  (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
 ];
 const RECENT_WINDOW_HOURS = 96;
 
@@ -65,7 +65,6 @@ export const NEWS_SOURCES: NewsSource[] = [
   { name: "WSJ World News", url: "https://feeds.content.dowjones.io/public/rss/RSSWorldNews", bias: "center-right", priority: 8, type: "wire" },
   { name: "WSJ US News", url: "https://feeds.content.dowjones.io/public/rss/RSSUSnews", bias: "center-right", priority: 8, type: "wire" },
   { name: "NewsNation", url: "https://www.newsnationnow.com/feed/", bias: "center", priority: 9, type: "wire" },
-  { name: "The Center Square", url: "https://www.thecentersquare.com/search/?f=rss&t=article&l=20&s=start_time&fulltext=showtext&sd=desc", bias: "center-right", priority: 7, type: "wire" },
 ];
 
 interface Rss2JsonItem {
@@ -404,12 +403,23 @@ function convertJsonItemToArticle(item: Rss2JsonItem, source: NewsSource): NewsA
 }
 
 async function fetchSourceViaRss2Json(source: NewsSource): Promise<NewsArticle[]> {
-  const response = await fetch(`${RSS2JSON_API}?rss_url=${encodeURIComponent(source.url)}`);
-  if (!response.ok) {
-    throw new Error(`rss2json failed for ${source.name}`);
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), RSS2JSON_TIMEOUT_MS);
+  let data: Rss2JsonResponse;
+
+  try {
+    const response = await fetch(`${RSS2JSON_API}?rss_url=${encodeURIComponent(source.url)}`, {
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`rss2json failed for ${source.name}`);
+    }
+
+    data = await response.json();
+  } finally {
+    window.clearTimeout(timer);
   }
 
-  const data: Rss2JsonResponse = await response.json();
   if (data.status !== "ok" || !data.items?.length) {
     throw new Error(`No items for ${source.name}`);
   }

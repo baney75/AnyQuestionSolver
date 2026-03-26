@@ -30,6 +30,7 @@ export function WordOfTheDay({ onClose, onReturn }: WordOfTheDayProps) {
   const [chatInput, setChatInput] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const loadWotd = useCallback(async (forceRefresh = false) => {
     setLoading(true);
@@ -60,6 +61,14 @@ export function WordOfTheDay({ onClose, onReturn }: WordOfTheDayProps) {
       chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [chatMessages]);
+
+  useEffect(() => {
+    return () => {
+      audioRef.current?.pause();
+      audioRef.current = null;
+      window.speechSynthesis?.cancel();
+    };
+  }, []);
 
   const formattedDate = wotd
     ? new Date(wotd.date).toLocaleDateString("en-US", {
@@ -104,17 +113,50 @@ Answer the user's question directly. Stay focused on understanding, usage, nuanc
     }
   }, [chatInput, isChatLoading, wotd]);
 
-  const playAudio = () => {
-    if (!wotd?.audioUrl) return;
-    new Audio(wotd.audioUrl).play().catch(() => {});
-  };
+  const speakWord = useCallback((word: string) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(word);
+    utterance.lang = "en-US";
+    utterance.rate = 0.9;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+  }, []);
+
+  const playAudio = useCallback(async () => {
+    if (!wotd) {
+      return;
+    }
+
+    window.speechSynthesis?.cancel();
+
+    if (!wotd.audioUrl) {
+      speakWord(wotd.word);
+      return;
+    }
+
+    try {
+      const nextAudio = audioRef.current?.src === wotd.audioUrl
+        ? audioRef.current
+        : new Audio(wotd.audioUrl);
+
+      nextAudio.preload = "auto";
+      nextAudio.currentTime = 0;
+      audioRef.current = nextAudio;
+      await nextAudio.play();
+    } catch {
+      speakWord(wotd.word);
+    }
+  }, [speakWord, wotd]);
 
   if (loading) {
     return (
       <div className="rounded-[2rem] border-2 border-gray-900 bg-white neo-shadow dark:border-gray-100 dark:bg-gray-900">
         <div className="flex min-h-[220px] flex-col items-center justify-center gap-4 p-8">
           <Loader2 className="h-8 w-8 animate-spin text-[var(--aqs-accent)]" />
-          <p className="text-gray-600 dark:text-gray-300">Loading word of the day...</p>
+          <p className="text-gray-600 dark:text-gray-300">Loading word of the day…</p>
         </div>
       </div>
     );
@@ -166,7 +208,7 @@ Answer the user's question directly. Stay focused on understanding, usage, nuanc
                 type="button"
                 onClick={onReturn}
                 className="rounded-xl border-2 border-gray-900 bg-white p-2 text-gray-900 dark:border-gray-100 dark:bg-gray-900 dark:text-gray-100"
-                title="Back to answer"
+                aria-label="Back to answer"
               >
                 <ArrowLeft className="h-5 w-5" />
               </button>
@@ -221,11 +263,12 @@ Answer the user's question directly. Stay focused on understanding, usage, nuanc
                     {wotd.partOfSpeech}
                   </span>
                 ) : null}
-                {wotd.audioUrl ? (
+                {wotd.audioUrl || wotd.word ? (
                   <button
                     type="button"
                     onClick={playAudio}
                     className="inline-flex items-center gap-2 rounded-full border-2 border-gray-900 bg-white px-3 py-2 text-sm font-bold text-gray-900 dark:border-gray-100 dark:bg-gray-900 dark:text-gray-100"
+                    aria-label={`Listen to the pronunciation of ${wotd.word}`}
                   >
                     <Volume2 className="h-4 w-4" />
                     Listen
@@ -293,7 +336,7 @@ Answer the user's question directly. Stay focused on understanding, usage, nuanc
 
           <div className="space-y-4 p-4 md:p-6">
             {chatMessages.length > 0 ? (
-              <div className="max-h-[420px] space-y-4 overflow-y-auto">
+              <div className="scroll-panel max-h-[420px] space-y-4 overflow-y-auto pr-2">
                 {chatMessages.map((message, index) => (
                   <div key={`${message.role}-${index}`} className={message.role === "user" ? "flex justify-end" : "flex justify-start"}>
                     <div
@@ -312,7 +355,7 @@ Answer the user's question directly. Stay focused on understanding, usage, nuanc
                     <div className="rounded-[1.4rem] border-2 border-gray-900 bg-white px-4 py-3 dark:border-gray-100 dark:bg-gray-900">
                       <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        Thinking...
+                        Thinking…
                       </div>
                     </div>
                   </div>
@@ -349,7 +392,10 @@ Answer the user's question directly. Stay focused on understanding, usage, nuanc
                 type="text"
                 value={chatInput}
                 onChange={(event) => setChatInput(event.target.value)}
-                placeholder={`Ask about "${wotd.word}"...`}
+                placeholder={`Ask about "${wotd.word}"…`}
+                aria-label={`Ask about the word ${wotd.word}`}
+                name="word-chat"
+                autoComplete="off"
                 disabled={isChatLoading}
                 className="flex-1 rounded-[1.2rem] border-2 border-gray-900 bg-white px-4 py-3 text-gray-900 focus:border-[var(--aqs-accent)] focus:outline-none focus:ring-4 focus:ring-[color:rgba(122,31,52,0.18)] disabled:opacity-50 dark:border-gray-100 dark:bg-gray-900 dark:text-gray-100"
               />
@@ -357,6 +403,7 @@ Answer the user's question directly. Stay focused on understanding, usage, nuanc
                 type="submit"
                 disabled={!chatInput.trim() || isChatLoading}
                 className="rounded-[1.2rem] border-2 border-gray-900 bg-[var(--aqs-accent)] px-4 py-3 text-white transition hover:-translate-y-0.5 disabled:opacity-50 dark:border-gray-100"
+                aria-label="Send word question"
               >
                 <Send className="h-5 w-5" />
               </button>

@@ -1,5 +1,8 @@
 const GOOGLE_API_KEY = import.meta.env.GOOGLE_API_KEY;
+const SEARCH_API_KEY = GOOGLE_API_KEY || import.meta.env.GEMINI_API_KEY;
 const SEARCH_ENGINE_ID = '017576662512468239146:2152321705'; // Public search engine ID
+const SEARCH_REQUEST_TIMEOUT_MS = 10_000;
+const JINA_FETCH_PREFIX = "https://r.jina.ai/http://";
 
 export interface SearchResult {
   title: string;
@@ -115,6 +118,71 @@ interface WikipediaQueryResponse {
 const DIAGRAM_QUERY_HINT = /\b(diagram|chart|graph|plot|map|formula|equation|molecule|structure|schematic|infographic|logo|icon|flag|timeline|ui|interface)\b/i;
 const PHOTO_QUERY_HINT = /\b(photo|photograph|portrait|headshot|cityscape|landscape|landmark|skyline|animal|person|building|campus|scene)\b/i;
 
+async function fetchJsonWithTimeout<T>(url: string) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), SEARCH_REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) {
+      throw new Error(`Search failed: ${response.status}`);
+    }
+
+    return (await response.json()) as T;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function fetchTextWithTimeout(url: string) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), SEARCH_REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) {
+      throw new Error(`Search failed: ${response.status}`);
+    }
+
+    return await response.text();
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+function parseCaptionText(source: string) {
+  if (!source.trim()) {
+    return "";
+  }
+
+  const xmlSegments = [...source.matchAll(/<text[^>]*>([\s\S]*?)<\/text>/g)]
+    .map((match) => match[1] ?? "")
+    .map((segment) =>
+      segment
+        .replace(/&amp;/g, "&")
+        .replace(/&#39;/g, "'")
+        .replace(/&quot;/g, "\"")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">"),
+    );
+
+  if (xmlSegments.length > 0) {
+    return xmlSegments.join(" ");
+  }
+
+  const vttLines = source
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) =>
+      line &&
+      line !== "WEBVTT" &&
+      !line.includes("-->") &&
+      !/^\d+$/.test(line),
+    );
+
+  return vttLines.join(" ");
+}
+
 function buildSearchResponse(items: SearchResult[]): SearchResponse {
   return {
     items,
@@ -147,8 +215,103 @@ function extractYouTubeVideoId(url: string) {
   return null;
 }
 
+function normalizeVideoSearchQuery(query: string) {
+  return query
+    .replace(/^["'\s]+|["'\s]+$/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/\b(youtube|video|watch|clip|preview)\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildVideoSearchCandidates(query: string) {
+  const normalized = normalizeVideoSearchQuery(query) || query.trim();
+  const compact = normalized.split(/\s+/).slice(0, 8).join(" ");
+  return [...new Set([query.trim(), normalized, compact].filter(Boolean))];
+}
+
+function parseJinaYouTubeSearch(markdown: string, maxResults: number): VideoResult[] {
+  const lines = markdown.split("\n");
+  const items: VideoResult[] = [];
+  const seen = new Set<string>();
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const titleMatch = lines[index]?.match(/^###\s+\[(.+?)\]\((https?:\/\/www\.youtube\.com\/watch\?v=[^) ]+)/);
+    if (!titleMatch) {
+      continue;
+    }
+
+    const title = titleMatch[1]?.trim();
+    const url = titleMatch[2]?.trim();
+    const videoId = extractYouTubeVideoId(url);
+
+    if (!title || !videoId || seen.has(videoId)) {
+      continue;
+    }
+
+    let channelTitle = "YouTube";
+    let description = "";
+
+    for (let offset = 1; offset <= 5 && index + offset < lines.length; offset += 1) {
+      const candidate = lines[index + offset]?.trim();
+      if (!candidate) {
+        continue;
+      }
+
+      const channelMatch = candidate.match(/^\[(.+?)\]\((https?:\/\/www\.youtube\.com\/@[^)]+|https?:\/\/www\.youtube\.com\/channel\/[^)]+)\)$/);
+      if (channelMatch) {
+        channelTitle = channelMatch[1]?.trim() || channelTitle;
+        continue;
+      }
+
+      if (!candidate.startsWith("###") && !candidate.startsWith("![")) {
+        description = candidate.replace(/\s+/g, " ").trim();
+        if (description) {
+          break;
+        }
+      }
+    }
+
+    items.push({
+      title,
+      videoId,
+      thumbnail: getYouTubeThumbnail(videoId, "high"),
+      description,
+      channelTitle,
+      publishedAt: "",
+    });
+    seen.add(videoId);
+
+    if (items.length >= maxResults) {
+      break;
+    }
+  }
+
+  return items;
+}
+
+async function fallbackVideoSearchViaJina(query: string, maxResults: number): Promise<VideoSearchResponse> {
+  for (const candidate of buildVideoSearchCandidates(query)) {
+    try {
+      const url = `${JINA_FETCH_PREFIX}www.youtube.com/results?search_query=${encodeURIComponent(candidate)}`;
+      const markdown = await fetchTextWithTimeout(url);
+      const items = parseJinaYouTubeSearch(markdown, maxResults);
+      if (items.length > 0) {
+        return {
+          items,
+          totalResults: items.length,
+        };
+      }
+    } catch {
+      // keep trying shorter candidate queries
+    }
+  }
+
+  return { items: [], totalResults: 0 };
+}
+
 async function fallbackImageSearch(query: string, numResults: number): Promise<SearchResponse> {
-  if (GOOGLE_API_KEY) {
+  if (SEARCH_API_KEY) {
     try {
       const webResults = await searchWeb(query, numResults);
       const imageItems = webResults.items.filter((item) => item.image?.url);
@@ -165,30 +328,27 @@ async function fallbackImageSearch(query: string, numResults: number): Promise<S
       q: query,
       page_size: String(Math.min(numResults, 10)),
     });
-    const response = await fetch(`https://api.openverse.org/v1/images/?${params}`);
-    if (response.ok) {
-      const data: OpenverseImageResponse = await response.json();
-      const items = (data.results || [])
-        .filter((item) => item.url)
-        .map((item) => ({
-          title: item.title || query,
-          link: item.foreign_landing_url || item.url || "",
-          snippet: item.creator ? `Creator: ${item.creator}` : "Openly licensed image",
-          displayLink: item.provider || item.source || "openverse.org",
-          image: {
-            url: item.url || "",
-            width: item.width || 0,
-            height: item.height || 0,
-          },
-        }));
+    const data = await fetchJsonWithTimeout<OpenverseImageResponse>(`https://api.openverse.org/v1/images/?${params}`);
+    const items = (data.results || [])
+      .filter((item) => item.url)
+      .map((item) => ({
+        title: item.title || query,
+        link: item.foreign_landing_url || item.url || "",
+        snippet: item.creator ? `Creator: ${item.creator}` : "Openly licensed image",
+        displayLink: item.provider || item.source || "openverse.org",
+        image: {
+          url: item.url || "",
+          width: item.width || 0,
+          height: item.height || 0,
+        },
+      }));
 
-      if (items.length > 0) {
-        return {
-          items,
-          totalResults: data.result_count || items.length,
-          searchTime: 0,
-        };
-      }
+    if (items.length > 0) {
+      return {
+        items,
+        totalResults: data.result_count || items.length,
+        searchTime: 0,
+      };
     }
   } catch {
     /* continue to Wikipedia fallback */
@@ -207,27 +367,24 @@ async function fallbackImageSearch(query: string, numResults: number): Promise<S
       format: "json",
       origin: "*",
     });
-    const response = await fetch(`https://en.wikipedia.org/w/api.php?${params}`);
-    if (response.ok) {
-      const data: WikipediaQueryResponse = await response.json();
-      const pages = Object.values(data.query?.pages || {});
-      const items = pages
-        .filter((page) => page.thumbnail?.source)
-        .map((page) => ({
-          title: page.title || query,
-          link: page.fullurl || page.canonicalurl || page.thumbnail?.source || "",
-          snippet: "Wikipedia image result",
-          displayLink: "wikipedia.org",
-          image: {
-            url: page.thumbnail?.source || "",
-            width: page.thumbnail?.width || 0,
-            height: page.thumbnail?.height || 0,
-          },
-        }));
+    const data = await fetchJsonWithTimeout<WikipediaQueryResponse>(`https://en.wikipedia.org/w/api.php?${params}`);
+    const pages = Object.values(data.query?.pages || {});
+    const items = pages
+      .filter((page) => page.thumbnail?.source)
+      .map((page) => ({
+        title: page.title || query,
+        link: page.fullurl || page.canonicalurl || page.thumbnail?.source || "",
+        snippet: "Wikipedia image result",
+        displayLink: "wikipedia.org",
+        image: {
+          url: page.thumbnail?.source || "",
+          width: page.thumbnail?.width || 0,
+          height: page.thumbnail?.height || 0,
+        },
+      }));
 
-      if (items.length > 0) {
-        return buildSearchResponse(items);
-      }
+    if (items.length > 0) {
+      return buildSearchResponse(items);
     }
   } catch {
     /* no fallback left */
@@ -237,6 +394,11 @@ async function fallbackImageSearch(query: string, numResults: number): Promise<S
 }
 
 async function fallbackVideoSearch(query: string, maxResults: number): Promise<VideoSearchResponse> {
+  const jinaResults = await fallbackVideoSearchViaJina(query, maxResults);
+  if (jinaResults.items.length > 0) {
+    return jinaResults;
+  }
+
   const webResults = await searchWeb(`site:youtube.com/watch ${query}`, Math.min(maxResults, 10));
   const deduped = new Map<string, VideoResult>();
 
@@ -263,28 +425,18 @@ async function fallbackVideoSearch(query: string, maxResults: number): Promise<V
 }
 
 export async function searchWeb(query: string, numResults = 10): Promise<SearchResponse> {
-  if (!GOOGLE_API_KEY) {
-    console.warn('Google API key not configured. Search disabled.');
+  if (!SEARCH_API_KEY) {
     return { items: [], totalResults: 0, searchTime: 0 };
   }
 
   const params = new URLSearchParams({
-    key: GOOGLE_API_KEY,
+    key: SEARCH_API_KEY,
     cx: SEARCH_ENGINE_ID,
     q: query,
     num: String(Math.min(numResults, 10)),
     safe: 'active',
   });
-
-  const response = await fetch(
-    `https://www.googleapis.com/customsearch/v1?${params}`
-  );
-
-  if (!response.ok) {
-    throw new Error(`Search failed: ${response.status}`);
-  }
-
-  const data: GoogleSearchResponse = await response.json();
+  const data = await fetchJsonWithTimeout<GoogleSearchResponse>(`https://www.googleapis.com/customsearch/v1?${params}`);
 
   return {
     items: (data.items || []).map((item: GoogleSearchItem) => ({
@@ -304,14 +456,14 @@ export async function searchWeb(query: string, numResults = 10): Promise<SearchR
 }
 
 export async function searchImages(query: string, numResults = 10): Promise<SearchResponse> {
-  if (!GOOGLE_API_KEY) {
+  if (!SEARCH_API_KEY) {
     return fallbackImageSearch(query, numResults);
   }
 
   const isDiagramQuery = DIAGRAM_QUERY_HINT.test(query);
   const isPhotoQuery = PHOTO_QUERY_HINT.test(query) && !isDiagramQuery;
   const params = new URLSearchParams({
-    key: GOOGLE_API_KEY,
+    key: SEARCH_API_KEY,
     cx: SEARCH_ENGINE_ID,
     q: query,
     num: String(Math.min(numResults, 10)),
@@ -323,19 +475,17 @@ export async function searchImages(query: string, numResults = 10): Promise<Sear
     params.set("imgType", "photo");
   }
 
-  const response = await fetch(
-    `https://www.googleapis.com/customsearch/v1?${params}`
-  );
-
-  if (!response.ok) {
-    if (response.status === 403 || response.status === 429) {
+  let data: GoogleSearchResponse;
+  try {
+    data = await fetchJsonWithTimeout<GoogleSearchResponse>(`https://www.googleapis.com/customsearch/v1?${params}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("403") || message.includes("429")) {
       return fallbackImageSearch(query, numResults);
     }
 
-    throw new Error(`Image search failed: ${response.status}`);
+    throw error;
   }
-
-  const data: GoogleSearchResponse = await response.json();
 
   const items = (data.items || []).map((item: GoogleSearchItem) => ({
     title: item.title,
@@ -361,12 +511,12 @@ export async function searchImages(query: string, numResults = 10): Promise<Sear
 }
 
 export async function searchVideos(query: string, maxResults = 10): Promise<VideoSearchResponse> {
-  if (!GOOGLE_API_KEY) {
-    return { items: [], totalResults: 0 };
+  if (!SEARCH_API_KEY) {
+    return fallbackVideoSearch(query, maxResults);
   }
 
   const params = new URLSearchParams({
-    key: GOOGLE_API_KEY,
+    key: SEARCH_API_KEY,
     q: query,
     part: 'snippet',
     type: 'video',
@@ -375,19 +525,12 @@ export async function searchVideos(query: string, maxResults = 10): Promise<Vide
     videoEmbeddable: 'true',
   });
 
-  const response = await fetch(
-    `https://www.googleapis.com/youtube/v3/search?${params}`
-  );
-
-  if (!response.ok) {
-    if (response.status === 403 || response.status === 429) {
-      return fallbackVideoSearch(query, maxResults);
-    }
-
-    throw new Error(`Video search failed: ${response.status}`);
+  let data: YouTubeSearchResponse;
+  try {
+    data = await fetchJsonWithTimeout<YouTubeSearchResponse>(`https://www.googleapis.com/youtube/v3/search?${params}`);
+  } catch (error) {
+    return fallbackVideoSearch(query, maxResults);
   }
-
-  const data: YouTubeSearchResponse = await response.json();
   const items = (data.items || []).map((item: YouTubeSearchItem) => ({
     title: item.snippet.title,
     videoId: item.id.videoId,
@@ -409,6 +552,32 @@ export async function searchVideos(query: string, maxResults = 10): Promise<Vide
 
 export function getYouTubeEmbedUrl(videoId: string): string {
   return `https://www.youtube.com/embed/${videoId}`;
+}
+
+export function getYouTubeWatchUrl(videoId: string): string {
+  return `https://www.youtube.com/watch?v=${videoId}`;
+}
+
+export async function fetchYouTubeTranscriptPreview(videoId: string): Promise<string | null> {
+  const captionUrls = [
+    `https://www.youtube.com/api/timedtext?v=${encodeURIComponent(videoId)}&lang=en&fmt=vtt`,
+    `https://www.youtube.com/api/timedtext?v=${encodeURIComponent(videoId)}&lang=en`,
+    `https://video.google.com/timedtext?v=${encodeURIComponent(videoId)}&lang=en`,
+  ];
+
+  for (const url of captionUrls) {
+    try {
+      const text = await fetchTextWithTimeout(url);
+      const parsed = parseCaptionText(text).replace(/\s+/g, " ").trim();
+      if (parsed) {
+        return parsed;
+      }
+    } catch {
+      // Browser CORS and caption availability vary by video; keep falling back.
+    }
+  }
+
+  return null;
 }
 
 export function getYouTubeThumbnail(videoId: string, quality: 'default' | 'medium' | 'high' = 'medium'): string {

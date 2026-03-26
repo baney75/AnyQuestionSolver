@@ -8,7 +8,7 @@ AnyQuestionSolver is a client-side React + Vite study app that sends text and im
 - Use `Shift+Enter` for a new line in the text composer.
 - Upload or paste screenshots of problems or worked solutions.
 - Automatically check shown work when an image or pasted text already contains an attempt.
-- Offer deeper walkthroughs, grounded research, follow-up chat, image search, charts, code execution, and local history.
+- Offer deeper walkthroughs, automatic grounding for current or citation-sensitive prompts, follow-up chat, image search, charts, code execution, and local history.
 
 ## Run locally
 
@@ -26,7 +26,7 @@ GOOGLE_API_KEY="your-key" # optional, falls back to GEMINI_API_KEY
 ## Verification
 
 - `bun lint`
-- `bun test src/utils/image.test.ts`
+- `bun test src/utils/image.test.ts src/utils/input.test.ts src/utils/solution.test.ts src/utils/request.test.ts src/services/gemini.test.ts src/services/news.test.ts src/services/wotd.test.ts`
 - `bun run build`
 
 ## Notes

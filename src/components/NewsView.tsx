@@ -23,7 +23,6 @@ import {
   fetchNewsForQueryWithStatus,
   hydrateNewsArticles,
   type NewsArticle,
-  type NewsFeedFailure,
 } from "../services/news";
 import { chatWithTutor } from "../services/gemini";
 import { RichResponse } from "./RichResponse";
@@ -78,6 +77,7 @@ function SourceToggle({
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={`rounded-full border px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-[0.18em] transition ${
         active
           ? "border-[var(--aqs-accent)] bg-[var(--aqs-accent)] text-white"
@@ -160,14 +160,21 @@ function LeadStory({
   onAsk: (article: NewsArticle) => void;
 }) {
   return (
-    <article className="rounded-[2rem] border-2 border-gray-900 bg-white p-4 text-gray-900 neo-shadow dark:border-gray-100 dark:bg-gray-900 dark:text-gray-100 md:p-5">
+    <article className="self-start rounded-[2rem] border-2 border-gray-900 bg-white p-4 text-gray-900 neo-shadow dark:border-gray-100 dark:bg-gray-900 dark:text-gray-100 md:p-5">
       <div className="grid gap-5 lg:grid-cols-[1.25fr_0.95fr]">
         <div className="overflow-hidden rounded-[1.4rem] border-2 border-gray-900 bg-[var(--aqs-accent-soft)] dark:border-gray-100 dark:bg-[color:rgba(122,31,52,0.16)]">
           {article.thumbnail ? (
-            <img src={article.thumbnail} alt="" className="h-full w-full object-cover" />
+            <img
+              src={article.thumbnail}
+              alt={article.title}
+              width={960}
+              height={720}
+              loading="eager"
+              className="h-full w-full object-cover"
+            />
           ) : (
             <div className="flex aspect-[4/3] items-center justify-center">
-              <Newspaper className="h-12 w-12 text-[var(--aqs-accent)] dark:text-[var(--aqs-accent-dark)]" />
+              <Newspaper className="h-12 w-12 text-[var(--aqs-accent)] dark:text-[var(--aqs-accent-dark)]" aria-hidden="true" />
             </div>
           )}
         </div>
@@ -249,10 +256,17 @@ function StoryCard({
     <article className="overflow-hidden rounded-[1.4rem] border-2 border-gray-900 bg-white neo-shadow transition hover:-translate-y-1 dark:border-gray-100 dark:bg-gray-900">
       <div className="aspect-[16/9] overflow-hidden border-b-2 border-gray-900 dark:border-gray-100">
         {article.thumbnail ? (
-          <img src={article.thumbnail} alt="" className="h-full w-full object-cover" />
+          <img
+            src={article.thumbnail}
+            alt={article.title}
+            width={640}
+            height={360}
+            loading="lazy"
+            className="h-full w-full object-cover"
+          />
         ) : (
           <div className="flex h-full items-center justify-center bg-[var(--aqs-accent-soft)] dark:bg-[color:rgba(122,31,52,0.18)]">
-            <Newspaper className="h-9 w-9 text-[var(--aqs-accent)] dark:text-[var(--aqs-accent-dark)]" />
+            <Newspaper className="h-9 w-9 text-[var(--aqs-accent)] dark:text-[var(--aqs-accent-dark)]" aria-hidden="true" />
           </div>
         )}
       </div>
@@ -311,8 +325,8 @@ export function NewsView({ initialQuery = "", onClose, onReturn, hasBackgroundTa
   const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "tutor"; text: string }>>([]);
   const [chatInput, setChatInput] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
-  const [failedSources, setFailedSources] = useState<NewsFeedFailure[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const loadTokenRef = useRef(0);
 
   const loadNews = useCallback(
@@ -333,7 +347,6 @@ export function NewsView({ initialQuery = "", onClose, onReturn, hasBackgroundTa
         }
 
         setArticles(result.articles);
-        setFailedSources(result.failedSources);
         setLoading(false);
         setRefreshing(false);
         setHydrating(true);
@@ -352,7 +365,6 @@ export function NewsView({ initialQuery = "", onClose, onReturn, hasBackgroundTa
       } catch (loadError) {
         if (loadToken === loadTokenRef.current) {
           setError(loadError instanceof Error ? loadError.message : "Failed to load news.");
-          setFailedSources([]);
           setLoading(false);
           setRefreshing(false);
           setHydrating(false);
@@ -372,6 +384,28 @@ export function NewsView({ initialQuery = "", onClose, onReturn, hasBackgroundTa
     }
   }, [chatMessages]);
 
+  useEffect(() => {
+    if (!showChat) {
+      return;
+    }
+
+    const focusTimer = window.setTimeout(() => {
+      chatInputRef.current?.focus();
+    }, 60);
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setShowChat(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.clearTimeout(focusTimer);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [showChat]);
+
   const filteredArticles = useMemo(() => {
     if (selectedSources.size === 0) {
       return articles;
@@ -380,8 +414,8 @@ export function NewsView({ initialQuery = "", onClose, onReturn, hasBackgroundTa
   }, [articles, selectedSources]);
 
   const leadArticle = filteredArticles[0] || null;
-  const latestRail = filteredArticles.slice(1, 4);
-  const deckArticles = filteredArticles.slice(4);
+  const latestRail = filteredArticles.slice(1, 6);
+  const deckArticles = filteredArticles.slice(6);
 
   const handleSearch = (event: React.FormEvent) => {
     event.preventDefault();
@@ -423,6 +457,11 @@ Quote or reference the DIRECT ARTICLE URL when discussing a story.
 If a story has a primary source listed, mention it.
 Do not emit [ACTION: show_news]. Stay in analyst mode.
 Be concise, neutral, and truth-seeking.
+Format for a compact floating panel:
+- start with the direct answer
+- prefer short bullets or short paragraphs
+- avoid long throat-clearing
+- compare stories explicitly when relevant
 
 ARTICLES:
 ${context}
@@ -447,6 +486,32 @@ ${userMessage}`;
     [filteredArticles, isChatLoading, query],
   );
 
+  const handleChatSubmit = useCallback(() => {
+    const message = chatInput.trim();
+    if (!message) {
+      return;
+    }
+
+    setChatInput("");
+    void sendNewsQuestion(message);
+  }, [chatInput, sendNewsQuestion]);
+
+  const handleChatInputKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setShowChat(false);
+        return;
+      }
+
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        handleChatSubmit();
+      }
+    },
+    [handleChatSubmit],
+  );
+
   const sourceSummary = useMemo(() => {
     const loaded = new Set(filteredArticles.map((article) => article.source));
     return NEWS_SOURCES.filter((source) => loaded.has(source.name));
@@ -466,7 +531,7 @@ ${userMessage}`;
                     type="button"
                     onClick={onReturn}
                     className="rounded-xl border-2 border-gray-900 bg-white p-2 text-gray-900 transition hover:-translate-y-0.5 dark:border-gray-100 dark:bg-gray-900 dark:text-gray-100"
-                    title="Back to answer"
+                    aria-label="Back to answer"
                   >
                     <ArrowLeft className="h-5 w-5" />
                   </button>
@@ -497,9 +562,11 @@ ${userMessage}`;
                     ? "border-gray-900 bg-[var(--aqs-accent)] text-white dark:border-gray-100"
                     : "border-gray-900 bg-white text-gray-900 hover:-translate-y-0.5 dark:border-gray-100 dark:bg-gray-900 dark:text-gray-100"
                 }`}
+                aria-expanded={showChat}
+                aria-controls="floating-news-chat"
               >
                 <MessageCircle className="mr-2 inline h-4 w-4" />
-                News Chat
+                Desk Chat
               </button>
               <button
                 type="button"
@@ -525,12 +592,15 @@ ${userMessage}`;
 
           <form onSubmit={handleSearch} className="mt-6 grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto]">
             <label className="relative block">
+              <span className="sr-only">Search the live news feed</span>
               <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
                 value={searchInput}
                 onChange={(event) => setSearchInput(event.target.value)}
-                placeholder="Search this live news set..."
+                placeholder="Search this live news set…"
+                name="news-search"
+                autoComplete="off"
                 className="w-full rounded-[1.2rem] border-2 border-gray-900 bg-white py-3 pl-12 pr-4 text-gray-900 focus:border-[var(--aqs-accent)] focus:outline-none focus:ring-4 focus:ring-[color:rgba(122,31,52,0.18)] dark:border-gray-100 dark:bg-gray-900 dark:text-gray-100"
               />
             </label>
@@ -579,11 +649,41 @@ ${userMessage}`;
               </p>
             </div>
           ) : (
-            <div className="space-y-8">
-              <div className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_360px] 2xl:grid-cols-[minmax(0,1.6fr)_380px]">
+            <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.75fr)_360px] 2xl:grid-cols-[minmax(0,1.95fr)_380px]">
+              <div className="space-y-8">
                 <LeadStory article={leadArticle} onAsk={(article) => void sendNewsQuestion(`Explain this story: ${article.title}`, article)} />
 
-                <aside className="space-y-4">
+                {deckArticles.length > 0 ? (
+                  <div>
+                    <div className="mb-4 flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-xs font-mono font-bold uppercase tracking-[0.28em] text-[var(--aqs-accent-strong)] dark:text-[var(--aqs-accent-dark)]">
+                          More Coverage
+                        </p>
+                        <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                          Additional reporting from the same live desk.
+                        </p>
+                      </div>
+                      {selectedSources.size > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedSources(new Set())}
+                          className="text-sm font-bold text-[var(--aqs-accent-strong)] hover:underline dark:text-[var(--aqs-accent-dark)]"
+                        >
+                          Clear filters
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(17rem,1fr))] 2xl:[grid-template-columns:repeat(auto-fit,minmax(18.5rem,1fr))]">
+                      {deckArticles.map((article) => (
+                        <StoryCard key={article.link} article={article} onAsk={(selectedArticle) => void sendNewsQuestion(`Give me the essentials on this article.`, selectedArticle)} />
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              <aside className="space-y-4 xl:sticky xl:top-6">
                   <div className="rounded-[1.4rem] border-2 border-gray-900 bg-white p-4 neo-shadow-sm dark:border-gray-100 dark:bg-gray-900">
                     <p className="text-xs font-mono font-bold uppercase tracking-[0.28em] text-[var(--aqs-accent-strong)] dark:text-[var(--aqs-accent-dark)]">
                       Latest Desk
@@ -611,17 +711,6 @@ ${userMessage}`;
                       <p className="text-xs font-mono uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
                         Every card links to the direct article. Primary-source buttons appear when the feed or article metadata exposes them.
                       </p>
-                      {failedSources.length > 0 ? (
-                        <div className="rounded-2xl border border-amber-300 bg-amber-50/90 px-3 py-3 text-xs leading-6 text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100">
-                          <p className="font-semibold">
-                            Feed coverage is partial right now: {failedSources.length} of {NEWS_SOURCES.length} news source
-                            {failedSources.length === 1 ? " is" : "s are"} temporarily unavailable.
-                          </p>
-                          <p className="mt-1">
-                            Missing: {failedSources.map((entry) => entry.source.name).join(", ")}
-                          </p>
-                        </div>
-                      ) : null}
                       {hydrating ? (
                         <div className="rounded-2xl border border-gray-200 bg-gray-50/90 px-3 py-3 text-xs leading-6 text-gray-700 dark:border-gray-700 dark:bg-gray-950/40 dark:text-gray-200">
                           Enriching thumbnails and primary-source links in the background.
@@ -630,147 +719,141 @@ ${userMessage}`;
                     </div>
                   </div>
                 </aside>
-              </div>
-
-              {deckArticles.length > 0 ? (
-                <div>
-                  <div className="mb-4 flex items-center justify-between gap-4">
-                    <div>
-                      <p className="text-xs font-mono font-bold uppercase tracking-[0.28em] text-[var(--aqs-accent-strong)] dark:text-[var(--aqs-accent-dark)]">
-                        More Coverage
-                      </p>
-                      <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-                        Additional reporting from the same live desk.
-                      </p>
-                    </div>
-                    {selectedSources.size > 0 ? (
-                      <button
-                        type="button"
-                        onClick={() => setSelectedSources(new Set())}
-                        className="text-sm font-bold text-[var(--aqs-accent-strong)] hover:underline dark:text-[var(--aqs-accent-dark)]"
-                      >
-                        Clear filters
-                      </button>
-                    ) : null}
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                    {deckArticles.map((article) => (
-                      <StoryCard key={article.link} article={article} onAsk={(selectedArticle) => void sendNewsQuestion(`Give me the essentials on this article.`, selectedArticle)} />
-                    ))}
-                  </div>
-                </div>
-              ) : null}
             </div>
           )}
         </div>
       </section>
 
       {showChat ? (
-        <section className="overflow-hidden rounded-[2rem] border-2 border-gray-900 bg-white neo-shadow dark:border-gray-100 dark:bg-gray-900">
-          <div className="flex items-center justify-between border-b-2 border-gray-900 bg-[var(--aqs-accent-soft)] px-4 py-4 dark:border-gray-100 dark:bg-[color:rgba(122,31,52,0.14)]">
-            <div>
-              <p className="text-xs font-mono font-bold uppercase tracking-[0.28em] text-[var(--aqs-accent-strong)] dark:text-[var(--aqs-accent-dark)]">
-                News Chat
-              </p>
-              <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">
-                Ask for comparisons, timelines, or what the direct reporting actually says.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowChat(false)}
-              className="rounded-xl border-2 border-gray-900 bg-white p-2 text-gray-900 dark:border-gray-100 dark:bg-gray-900 dark:text-gray-100"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-
-          <div className="space-y-4 p-4 md:p-6">
-            {chatMessages.length === 0 ? (
-              <div className="rounded-[1.4rem] border-2 border-dashed border-gray-300 px-4 py-8 text-center dark:border-gray-700">
-                <MessageCircle className="mx-auto h-10 w-10 text-gray-300 dark:text-gray-600" />
-                <p className="mt-3 text-sm text-gray-600 dark:text-gray-300">
-                  Try: “Compare the lead story with the second one,” or “What is the direct source behind this report?”
-                </p>
-              </div>
-            ) : (
-              <div className="max-h-[460px] space-y-4 overflow-y-auto">
-                {chatMessages.map((message, index) => (
-                  <div key={`${message.role}-${index}`} className={message.role === "user" ? "flex justify-end" : "flex justify-start"}>
-                    <div
-                      className={`max-w-[88%] rounded-[1.4rem] border-2 px-4 py-3 ${
-                        message.role === "user"
-                          ? "border-gray-900 bg-[var(--aqs-accent)] text-white dark:border-gray-100"
-                          : "border-gray-900 bg-white text-gray-900 dark:border-gray-100 dark:bg-gray-900 dark:text-gray-100"
-                      }`}
-                    >
-                      {message.role === "tutor" ? <RichResponse text={message.text} compact /> : <p className="text-sm leading-7">{message.text}</p>}
-                    </div>
-                  </div>
-                ))}
-                {isChatLoading ? (
-                  <div className="flex justify-start">
-                    <div className="rounded-[1.4rem] border-2 border-gray-900 bg-white px-4 py-3 dark:border-gray-100 dark:bg-gray-900">
-                      <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Thinking through the feed set...
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-                <div ref={chatEndRef} />
-              </div>
-            )}
-
-            <div className="flex flex-wrap gap-2">
-              {[
-                "Summarize the top stories.",
-                "Which article has the strongest direct sourcing?",
-                "What changed in the last 24 hours?",
-              ].map((suggestion) => (
+        <div className="pointer-events-none fixed inset-x-3 bottom-3 z-40 flex justify-end sm:inset-x-auto sm:bottom-6 sm:right-6">
+          <section
+            id="floating-news-chat"
+            role="dialog"
+            aria-label="News chat"
+            className="pointer-events-auto w-full max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-[1.8rem] border-2 border-gray-900 bg-white neo-shadow dark:border-gray-100 dark:bg-gray-900 sm:w-[26rem]"
+          >
+              <div className="flex items-start justify-between gap-4 border-b-2 border-gray-900 bg-[var(--aqs-accent-soft)] px-4 py-4 dark:border-gray-100 dark:bg-[color:rgba(122,31,52,0.14)]">
+                <div>
+                  <p className="text-xs font-mono font-bold uppercase tracking-[0.28em] text-[var(--aqs-accent-strong)] dark:text-[var(--aqs-accent-dark)]">
+                    Floating Desk Chat
+                  </p>
+                  <p className="mt-1 text-sm leading-6 text-gray-700 dark:text-gray-300">
+                    Ask for comparisons, timelines, or what the direct reporting actually supports.
+                  </p>
+                </div>
                 <button
-                  key={suggestion}
                   type="button"
-                  onClick={() => {
-                    setChatInput("");
-                    void sendNewsQuestion(suggestion);
-                  }}
-                  disabled={isChatLoading || filteredArticles.length === 0}
-                  className="rounded-full border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:border-[var(--aqs-accent)] hover:text-[var(--aqs-accent-strong)] dark:border-gray-700 dark:text-gray-300"
+                  onClick={() => setShowChat(false)}
+                  className="rounded-xl border-2 border-gray-900 bg-white p-2 text-gray-900 dark:border-gray-100 dark:bg-gray-900 dark:text-gray-100"
+                  aria-label="Close news chat"
                 >
-                  {suggestion}
+                  <X className="h-5 w-5" />
                 </button>
-              ))}
-            </div>
+              </div>
 
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const message = chatInput.trim();
-                if (!message) return;
-                setChatInput("");
-                void sendNewsQuestion(message);
-              }}
-              className="flex gap-2"
-            >
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(event) => setChatInput(event.target.value)}
-                placeholder="Ask about the articles above..."
-                disabled={isChatLoading}
-                className="flex-1 rounded-[1.2rem] border-2 border-gray-900 bg-white px-4 py-3 text-gray-900 focus:border-[var(--aqs-accent)] focus:outline-none focus:ring-4 focus:ring-[color:rgba(122,31,52,0.18)] disabled:opacity-50 dark:border-gray-100 dark:bg-gray-900 dark:text-gray-100"
-              />
-              <button
-                type="submit"
-                disabled={!chatInput.trim() || isChatLoading}
-                className="rounded-[1.2rem] border-2 border-gray-900 bg-[var(--aqs-accent)] px-4 py-3 text-white transition hover:-translate-y-0.5 disabled:opacity-50 dark:border-gray-100"
-              >
-                <Send className="h-5 w-5" />
-              </button>
-            </form>
-          </div>
-        </section>
+              <div className="space-y-4 p-4">
+                <div className="rounded-[1.2rem] border border-gray-300 bg-gray-50/80 px-3 py-3 text-sm leading-6 text-gray-600 dark:border-gray-700 dark:bg-gray-800/40 dark:text-gray-300">
+                  {filteredArticles.length > 0
+                    ? `Working from ${filteredArticles.length} live article${filteredArticles.length === 1 ? "" : "s"} in the current desk.`
+                    : "No current articles are loaded yet."}
+                </div>
+
+                {chatMessages.length === 0 ? (
+                  <div className="rounded-[1.4rem] border-2 border-dashed border-gray-300 px-4 py-8 text-center dark:border-gray-700">
+                    <MessageCircle className="mx-auto h-10 w-10 text-gray-300 dark:text-gray-600" />
+                    <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                      Try: “Compare the lead story with the second one,” or “What is the direct source behind this report?”
+                    </p>
+                  </div>
+                ) : (
+                  <div className="scroll-panel max-h-[min(46vh,420px)] space-y-4 overflow-y-auto rounded-[1.4rem] border border-gray-300 bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-950/30">
+                    {chatMessages.map((message, index) => (
+                      <div key={`${message.role}-${index}`} className={message.role === "user" ? "flex justify-end" : "flex justify-start"}>
+                        <div
+                          className={`max-w-[92%] rounded-[1.3rem] border-2 px-4 py-3 ${
+                            message.role === "user"
+                              ? "border-gray-900 bg-[var(--aqs-accent)] text-white dark:border-gray-100"
+                              : "border-gray-900 bg-white text-gray-900 dark:border-gray-100 dark:bg-gray-900 dark:text-gray-100"
+                          }`}
+                        >
+                          <p className={`mb-2 text-[11px] font-mono uppercase tracking-[0.18em] ${message.role === "user" ? "text-white/80" : "text-gray-500 dark:text-gray-400"}`}>
+                            {message.role === "user" ? "You" : "Desk"}
+                          </p>
+                          {message.role === "tutor" ? <RichResponse text={message.text} compact /> : <p className="text-sm leading-7">{message.text}</p>}
+                        </div>
+                      </div>
+                    ))}
+                    {isChatLoading ? (
+                      <div className="flex justify-start">
+                        <div className="rounded-[1.4rem] border-2 border-gray-900 bg-white px-4 py-3 dark:border-gray-100 dark:bg-gray-900">
+                          <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Thinking through the feed set...
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                    <div ref={chatEndRef} />
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    "Summarize the top stories.",
+                    "Which article has the strongest direct sourcing?",
+                    "What changed in the last 24 hours?",
+                  ].map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => {
+                        setChatInput("");
+                        void sendNewsQuestion(suggestion);
+                      }}
+                      disabled={isChatLoading || filteredArticles.length === 0}
+                      className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:border-[var(--aqs-accent)] hover:text-[var(--aqs-accent-strong)] disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    handleChatSubmit();
+                  }}
+                  className="space-y-3"
+                >
+                  <textarea
+                    ref={chatInputRef}
+                    value={chatInput}
+                    onChange={(event) => setChatInput(event.target.value)}
+                    placeholder="Ask what matters, what changed, or what the sourcing actually proves…"
+                    aria-label="Ask about the current articles"
+                    name="news-chat"
+                    autoComplete="off"
+                    disabled={isChatLoading}
+                    rows={3}
+                    onKeyDown={handleChatInputKeyDown}
+                    className="w-full resize-none rounded-[1.2rem] border-2 border-gray-900 bg-white px-4 py-3 text-gray-900 focus:border-[var(--aqs-accent)] focus:outline-none focus:ring-4 focus:ring-[color:rgba(122,31,52,0.18)] disabled:opacity-50 dark:border-gray-100 dark:bg-gray-900 dark:text-gray-100"
+                  />
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Enter sends. Shift+Enter adds a new line.</p>
+                    <button
+                      type="submit"
+                      disabled={!chatInput.trim() || isChatLoading}
+                      className="inline-flex items-center gap-2 rounded-[1.2rem] border-2 border-gray-900 bg-[var(--aqs-accent)] px-4 py-3 text-white transition hover:-translate-y-0.5 disabled:opacity-50 dark:border-gray-100"
+                      aria-label="Send news question"
+                    >
+                      <Send className="h-5 w-5" />
+                      Ask Desk
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </section>
+        </div>
       ) : null}
     </div>
   );

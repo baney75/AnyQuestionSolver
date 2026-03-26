@@ -8,6 +8,7 @@ import { fetchFeedXml, stripHtml } from "./rss";
 const WOTD_FEED_URL = "https://www.merriam-webster.com/wotd/feed/rss2";
 const RSS2JSON_API = "https://api.rss2json.com/v1/api.json";
 const CACHE_TTL_MS = 1000 * 60 * 60;
+const WOTD_FETCH_TIMEOUT_MS = 10_000;
 
 export interface WordOfTheDay {
   word: string;
@@ -170,12 +171,23 @@ function parseFallbackJson(data: Rss2JsonResponse): WordOfTheDay {
 
 async function fetchWordOfTheDayFromFeed() {
   try {
-    const response = await fetch(`${RSS2JSON_API}?rss_url=${encodeURIComponent(WOTD_FEED_URL)}`);
-    if (!response.ok) {
-      throw new Error("Failed to fetch word of the day");
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), WOTD_FETCH_TIMEOUT_MS);
+    let data: Rss2JsonResponse;
+
+    try {
+      const response = await fetch(`${RSS2JSON_API}?rss_url=${encodeURIComponent(WOTD_FEED_URL)}`, {
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error("Failed to fetch word of the day");
+      }
+
+      data = await response.json();
+    } finally {
+      window.clearTimeout(timer);
     }
 
-    const data: Rss2JsonResponse = await response.json();
     if (data.status !== "ok") {
       throw new Error("Failed to fetch word of the day");
     }
@@ -193,7 +205,15 @@ export async function getWordOfTheDay(forceRefresh = false): Promise<WordOfTheDa
     return cachedWotd;
   }
 
-  cachedWotd = await fetchWordOfTheDayFromFeed();
-  cacheTime = now;
-  return cachedWotd;
+  try {
+    cachedWotd = await fetchWordOfTheDayFromFeed();
+    cacheTime = now;
+    return cachedWotd;
+  } catch (error) {
+    if (cachedWotd) {
+      return cachedWotd;
+    }
+
+    throw error;
+  }
 }

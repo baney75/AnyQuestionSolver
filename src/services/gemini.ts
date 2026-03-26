@@ -675,10 +675,9 @@ export async function chatWithTutor(
   if (!message.trim()) throw new Error("Message must not be empty.");
 
   const contents: Array<{ role: "user" | "model"; parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> }> = [];
+  const originalParts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
 
-  // Add original question context if provided
   if (originalQuestion) {
-    const originalParts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
     if (originalQuestion.imageBase64) {
       originalParts.push({
         inlineData: { mimeType: "image/jpeg", data: originalQuestion.imageBase64 },
@@ -689,13 +688,37 @@ export async function chatWithTutor(
     } else if (originalParts.length > 0) {
       originalParts.push({ text: "The image above shows the user's original question." });
     }
-    if (originalParts.length > 0) {
-      contents.push({ role: "user", parts: originalParts });
+  }
+
+  let prefixedHistory = history;
+  if (originalParts.length > 0) {
+    if (history[0]?.role === "user") {
+      const [firstTurn, ...rest] = history;
+
+      contents.push({
+        role: "user",
+        parts: [
+          ...originalParts,
+          { text: firstTurn.text },
+        ],
+      });
+      prefixedHistory = rest;
+    } else {
+      contents.push({
+        role: "user",
+        parts: [
+          ...originalParts,
+          { text: originalQuestion?.text ? `Original question: ${originalQuestion.text}` : "Use the original question context above in your answer." },
+        ],
+      });
+      contents.push({
+        role: "model",
+        parts: [{ text: "Understood. I will use the original question context in the follow-up reply." }],
+      });
     }
   }
 
-  // Add conversation history
-  for (const h of history) {
+  for (const h of prefixedHistory) {
     contents.push({
       role: h.role === "user" ? "user" : "model",
       parts: [{ text: h.text }],
@@ -719,11 +742,21 @@ export async function chatWithTutor(
     contents,
     config: {
       systemInstruction:
-        `You are a helpful tutor answering follow-up questions. Be concise but thorough. If the user asks whether their work is right, verify it directly before expanding. Use LaTeX for math. Include Python code or charts when computation would help.
+        `You are a helpful tutor answering follow-up questions. Be concise, readable, and directly useful inside a narrow chat panel. If the user asks whether their work is right, verify it directly before expanding. Use LaTeX for math. Include Python code or charts only when computation genuinely helps.
 
 IMPORTANT: Always keep the original question in mind when answering follow-ups. Reference specific aspects of the original question and any original image when relevant. Build upon or correct the original reasoning as needed.
 
+Formatting rules for follow-up replies:
+- Start with the direct answer or next step, not a long intro.
+- Prefer short paragraphs and flat bullet lists.
+- Keep most replies to 3-6 tight bullets or short paragraphs.
+- If you give steps, number them.
+- Do not restate the whole prior solution unless the user asks for a full rewrite.
+
 If the follow-up is too vague to answer correctly, ask concise clarification questions instead of guessing.
+When you ask for clarification, offer 2-4 concrete numbered choices the user can answer quickly.
+Keep each clarification choice short enough to fit in a compact UI card, ideally one sentence fragment rather than a paragraph.
+If the user gives a short reply after a clarification, treat it as their choice and continue the task.
 If the original problem is clearly coursework, continue teaching method-first and keep any final result isolated in the **Answer:** section only.
 
 ${MEDIA_MARKER_PROMPT}

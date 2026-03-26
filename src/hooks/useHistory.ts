@@ -28,14 +28,22 @@ export function useHistory() {
   const push = useCallback((item: HistoryItem) => {
     setItems((current) => {
       const next = [item, ...current].slice(0, MAX_ITEMS);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        /* storage may be unavailable or full */
+      }
       return next;
     });
   }, []);
 
   const clear = useCallback(() => {
     setItems([]);
-    localStorage.removeItem(STORAGE_KEY);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      /* storage may be unavailable */
+    }
   }, []);
 
   return { items, push, clear };

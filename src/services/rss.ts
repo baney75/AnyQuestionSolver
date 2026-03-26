@@ -32,8 +32,21 @@ export interface RssFeed {
 const FETCH_TIMEOUT_MS = 16_000;
 const CORS_PROXIES = [
   (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-  (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
 ];
+
+export function looksLikeFeedResponse(value: string) {
+  const trimmed = value.trimStart();
+  if (!trimmed.startsWith("<")) {
+    return false;
+  }
+
+  const head = trimmed.slice(0, 512).toLowerCase();
+  if (head.includes("<!doctype html") || head.includes("<html")) {
+    return false;
+  }
+
+  return /<(rss|feed|rdf:rdf)\b/i.test(trimmed);
+}
 
 function extractText(el: Element | null, tag: string): string {
   if (!el) return "";
@@ -226,7 +239,7 @@ export async function fetchFeedXml(url: string) {
   for (const buildUrl of CORS_PROXIES) {
     try {
       const xml = await fetchTextWithTimeout(buildUrl(url));
-      if (xml.trim().startsWith("<")) {
+      if (looksLikeFeedResponse(xml)) {
         return xml;
       }
       lastError = new Error("Non-XML response");

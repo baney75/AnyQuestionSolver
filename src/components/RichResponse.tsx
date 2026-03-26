@@ -13,6 +13,8 @@ import { ImageRenderer } from "./ImageRenderer";
 import { VideoEmbed } from "./VideoEmbed";
 import {
   getGoogleImageSearchUrl,
+  fetchYouTubeTranscriptPreview,
+  getYouTubeWatchUrl,
   getYouTubeSearchUrl,
   searchImages,
   searchVideos,
@@ -106,6 +108,57 @@ function chooseBestVideoResult(query: string, items: VideoResult[]) {
     .sort((left, right) => right.score - left.score);
 
   return ranked[0]?.item ?? null;
+}
+
+function cleanVideoDescription(description: string) {
+  return description
+    .replace(/\s+/g, " ")
+    .replace(/\bhttps?:\/\/\S+/gi, "")
+    .trim();
+}
+
+function formatVideoDate(dateString: string) {
+  if (!dateString) {
+    return "Recent upload date unavailable";
+  }
+
+  const parsed = new Date(dateString);
+  if (Number.isNaN(parsed.getTime())) {
+    return "Recent upload date unavailable";
+  }
+
+  return parsed.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function buildVideoKeyPoints(query: string, video: VideoResult) {
+  const cleanedDescription = cleanVideoDescription(video.description);
+  const sentences = cleanedDescription
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 30);
+  const queryTerms = query
+    .toLowerCase()
+    .split(/[^a-z0-9]+/i)
+    .map((term) => term.trim())
+    .filter((term) => term.length > 2);
+
+  const matchedTerms = queryTerms.filter((term) =>
+    `${video.title} ${cleanedDescription} ${video.channelTitle}`.toLowerCase().includes(term),
+  );
+
+  const points = [
+    matchedTerms.length > 0
+      ? `Best match for: ${matchedTerms.slice(0, 4).join(", ")}.`
+      : `Selected because the title and channel align with “${query}”.`,
+    sentences[0] || "Open the video to inspect the worked explanation in full context.",
+    sentences[1] || `Watch for the core setup, formula choice, and worked example tied to ${query}.`,
+  ];
+
+  return points.slice(0, 3);
 }
 
 function SmilesRenderer({ smiles }: { smiles: string }) {
@@ -371,6 +424,7 @@ function ImageSearchResult({ query, compact = false }: { query: string; compact?
 
 function VideoSearchResult({ query, compact = false }: { query: string; compact?: boolean }) {
   const [video, setVideo] = useState<VideoResult | null>(null);
+  const [transcriptPreview, setTranscriptPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -379,15 +433,18 @@ function VideoSearchResult({ query, compact = false }: { query: string; compact?
     async function loadVideo() {
       setLoading(true);
       setVideo(null);
+      setTranscriptPreview(null);
 
       try {
         const results = await searchVideos(query, 6);
+        const bestVideo = chooseBestVideoResult(query, results.items);
         if (active) {
-          setVideo(chooseBestVideoResult(query, results.items));
+          setVideo(bestVideo);
         }
       } catch {
         if (active) {
           setVideo(null);
+          setTranscriptPreview(null);
         }
       } finally {
         if (active) {
@@ -403,40 +460,171 @@ function VideoSearchResult({ query, compact = false }: { query: string; compact?
     };
   }, [query]);
 
+  useEffect(() => {
+    let active = true;
+
+    async function loadTranscript() {
+      if (!video) {
+        setTranscriptPreview(null);
+        return;
+      }
+
+      try {
+        const transcript = await fetchYouTubeTranscriptPreview(video.videoId);
+        if (active) {
+          setTranscriptPreview(transcript);
+        }
+      } catch {
+        if (active) {
+          setTranscriptPreview(null);
+        }
+      }
+    }
+
+    void loadTranscript();
+
+    return () => {
+      active = false;
+    };
+  }, [video]);
+
   if (loading) {
     return (
-      <div className="my-4 flex items-center justify-center rounded-xl border-2 border-gray-300 bg-gray-100 p-6 text-sm text-gray-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400">
-        Loading video...
+      <div className="my-4 rounded-[1.4rem] border-2 border-gray-300 bg-gray-100/90 p-5 dark:border-gray-600 dark:bg-gray-800/80">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1.15fr)_minmax(16rem,0.85fr)]">
+          <div className="aspect-video animate-pulse rounded-[1.2rem] border border-gray-300 bg-gray-200/80 dark:border-gray-700 dark:bg-gray-700/60" />
+          <div className="space-y-3">
+            <div className="h-4 w-28 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+            <div className="h-8 w-full animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+            <div className="h-20 w-full animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+            <div className="h-24 w-full animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+          </div>
+        </div>
       </div>
     );
   }
 
   if (!video) {
     return (
-      <div className="my-4 rounded-[1.4rem] border-2 border-gray-300 bg-gray-100 p-5 dark:border-gray-600 dark:bg-gray-800">
-        <div className="text-center">
-          <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-            Video preview is unavailable right now.
+      <div className="my-4 rounded-[1.4rem] border-2 border-gray-300 bg-gray-100/95 p-5 dark:border-gray-600 dark:bg-gray-800/90">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1.1fr)_minmax(16rem,0.9fr)]">
+          <div>
+            <p className="text-xs font-mono font-bold uppercase tracking-[0.2em] text-[var(--aqs-accent-strong)] dark:text-[var(--aqs-accent-dark)]">
+              Video Search
+            </p>
+            <h3 className="mt-2 text-lg font-bold leading-7 text-gray-900 dark:text-gray-100">
+              No stable preview yet for &quot;{query}&quot;.
+            </h3>
+            <p className="mt-3 text-sm leading-7 text-gray-600 dark:text-gray-300">
+              The app could not resolve a reliable embeddable YouTube hit from the current free client-side path. The result is still usable if you open search directly and pick a credible channel.
+            </p>
+            <div className="mt-4 rounded-[1.1rem] border border-gray-300 bg-white/80 p-4 dark:border-gray-700 dark:bg-gray-900/60">
+              <p className="text-xs font-mono font-bold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                Best Next Move
+              </p>
+              <p className="mt-2 text-sm leading-6 text-gray-700 dark:text-gray-300">
+                Open YouTube search, choose a worked example from a credible channel, then ask a follow-up like “summarize the method this video shows” or “what formula is the video using?”
+              </p>
+            </div>
           </div>
-          <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-            Open YouTube results for &quot;{query}&quot; in a new tab.
+
+          <div className="rounded-[1.2rem] border border-gray-300 bg-white/80 p-4 dark:border-gray-700 dark:bg-gray-900/60">
+            <p className="text-xs font-mono font-bold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+              Strong Follow-Ups
+            </p>
+            <div className="mt-3 space-y-2">
+              {[
+                "Find one credible video and tell me what to watch for.",
+                "Turn the chosen video into five study bullets.",
+                "Compare the video method with the written answer above.",
+              ].map((item) => (
+                <div
+                  key={item}
+                  className="rounded-xl border border-gray-300 bg-[var(--aqs-accent-soft)] px-3 py-3 text-sm font-medium leading-6 text-gray-700 dark:border-gray-700 dark:bg-[color:rgba(122,31,52,0.18)] dark:text-gray-200"
+                >
+                  {item}
+                </div>
+              ))}
+            </div>
+            <a
+              href={getYouTubeSearchUrl(query)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 inline-flex items-center justify-center rounded-xl border-2 border-gray-900 bg-white px-4 py-2 font-bold text-gray-900 transition hover:bg-gray-50 dark:border-gray-100 dark:bg-gray-950 dark:text-gray-100 dark:hover:bg-gray-900"
+            >
+              Search YouTube
+            </a>
           </div>
-          <a
-            href={getYouTubeSearchUrl(query)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-4 inline-flex items-center justify-center rounded-xl border-2 border-gray-900 bg-white px-4 py-2 font-bold text-gray-900 transition hover:bg-gray-50 dark:border-gray-100 dark:bg-gray-950 dark:text-gray-100 dark:hover:bg-gray-900"
-          >
-            Search YouTube
-          </a>
         </div>
       </div>
     );
   }
 
+  const cleanedDescription = cleanVideoDescription(video.description);
+  const keyPoints = buildVideoKeyPoints(query, video);
+  const transcriptOrNotes = transcriptPreview
+    ? transcriptPreview.slice(0, compact ? 180 : 360)
+    : cleanedDescription.slice(0, compact ? 160 : 320);
+  const watchUrl = getYouTubeWatchUrl(video.videoId);
+
   return (
     <div className={compact ? "my-3" : "my-4"}>
-      <VideoEmbed videoId={video.videoId} title={video.title} channelTitle={video.channelTitle} />
+      <div className={`grid gap-4 ${compact ? "" : "xl:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.8fr)]"}`}>
+        <VideoEmbed videoId={video.videoId} title={video.title} channelTitle={video.channelTitle} />
+
+        <aside className="rounded-[1.4rem] border-2 border-gray-300 bg-gray-100/80 p-4 dark:border-gray-600 dark:bg-gray-800/60">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-mono font-bold uppercase tracking-[0.2em] text-[var(--aqs-accent-strong)] dark:text-[var(--aqs-accent-dark)]">
+                Video Brief
+              </p>
+              <h3 className="mt-2 text-base font-bold leading-6 text-gray-900 dark:text-gray-100">
+                {video.title}
+              </h3>
+            </div>
+            <a
+              href={watchUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-xs font-bold text-gray-700 transition hover:border-[var(--aqs-accent)] hover:text-[var(--aqs-accent-strong)] dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+            >
+              Watch
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2 text-xs font-mono uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+            <span>{video.channelTitle || "YouTube"}</span>
+            <span>{formatVideoDate(video.publishedAt)}</span>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {keyPoints.map((point) => (
+              <div key={point} className="rounded-xl border border-gray-300 bg-white/90 px-3 py-3 text-sm leading-6 text-gray-700 dark:border-gray-700 dark:bg-gray-900/70 dark:text-gray-300">
+                {point}
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 rounded-xl border border-gray-300 bg-white/90 p-3 dark:border-gray-700 dark:bg-gray-900/70">
+            <p className="text-xs font-mono font-bold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+              Transcript / Notes
+            </p>
+            <p className="scroll-panel mt-2 max-h-48 overflow-y-auto pr-2 text-sm leading-6 text-gray-700 dark:text-gray-300">
+              {transcriptOrNotes
+                ? `${transcriptOrNotes}${
+                    (transcriptPreview ? transcriptPreview.length : cleanedDescription.length) > transcriptOrNotes.length ? "..." : ""
+                  }`
+                : "No public caption track or usable creator notes were available for this result yet."}
+            </p>
+            <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
+              {transcriptPreview
+                ? "Pulled from a free public caption track when the video exposed one."
+                : "A free public caption track was not exposed from the current client-side path, so this preview falls back to the creator description."}
+            </p>
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }
@@ -658,7 +846,7 @@ export function RichResponse({ text, compact = false }: RichResponseProps) {
   }, [elements, processed]);
 
   const proseClass = compact
-    ? "prose prose-sm prose-gray max-w-none dark:prose-invert prose-p:my-2 prose-p:leading-relaxed prose-pre:bg-gray-50 dark:prose-pre:bg-gray-900 prose-pre:border prose-pre:border-gray-300 dark:prose-pre:border-gray-700 prose-pre:rounded-xl prose-a:text-[var(--aqs-accent)] dark:prose-a:text-[var(--aqs-accent-dark)]"
+    ? "prose prose-sm max-w-none text-[15px] leading-7 text-gray-800 dark:prose-invert dark:text-gray-100 prose-p:my-3 prose-p:leading-7 prose-headings:mb-3 prose-headings:mt-5 prose-headings:font-sans prose-headings:font-bold prose-strong:text-gray-900 dark:prose-strong:text-gray-100 prose-ul:my-3 prose-ul:pl-5 prose-ol:my-3 prose-ol:pl-5 prose-li:my-1.5 prose-li:leading-7 prose-pre:bg-gray-50 dark:prose-pre:bg-gray-900 prose-pre:border prose-pre:border-gray-300 dark:prose-pre:border-gray-700 prose-pre:rounded-xl prose-blockquote:border-l-4 prose-blockquote:border-[var(--aqs-accent)] prose-blockquote:bg-[var(--aqs-accent-soft)]/40 prose-blockquote:px-4 prose-blockquote:py-2 dark:prose-blockquote:bg-[color:rgba(122,31,52,0.12)] prose-a:text-[var(--aqs-accent)] dark:prose-a:text-[var(--aqs-accent-dark)]"
     : "prose prose-lg prose-gray max-w-none dark:prose-invert prose-p:leading-relaxed prose-pre:bg-gray-50 dark:prose-pre:bg-gray-800 prose-pre:text-gray-900 dark:prose-pre:text-gray-100 prose-pre:border-2 prose-pre:border-gray-900 dark:prose-pre:border-gray-100 prose-pre:rounded-xl prose-pre:neo-shadow-sm prose-headings:font-sans prose-headings:font-bold prose-headings:tracking-tight prose-a:text-[var(--aqs-accent)] dark:prose-a:text-[var(--aqs-accent-dark)] prose-table:border-2 prose-table:border-gray-900 dark:prose-table:border-gray-100 prose-th:border-b-2 prose-th:border-gray-900 dark:prose-th:border-gray-100 prose-td:border-b prose-td:border-gray-200 dark:prose-td:border-gray-700";
 
   return (

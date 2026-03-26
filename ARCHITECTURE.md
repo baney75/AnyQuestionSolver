@@ -49,14 +49,14 @@ src/
 |-------|---------|---------|
 | `IDLE` | Initial, after clear | `Dropzone` |
 | `PREVIEWING` | Input received, before submit | `InputPreview` + `Dropzone` |
-| `LOADING` | User clicks fast/deep/research | `LoadingState` |
+| `LOADING` | User clicks fast/deep | `LoadingState` |
 | `SOLVED` | AI returns answer | `SolutionDisplay` + `ChatPanel` |
 | `ERROR` | API failure | `ErrorState` |
 
 **Transitions:**
 ```
 IDLE → PREVIEWING (text/image/voice input)
-PREVIEWING → LOADING (user selects fast/deep/research)
+PREVIEWING → LOADING (user selects fast/deep)
 PREVIEWING → IDLE (user clears)
 LOADING → SOLVED (success)
 LOADING → ERROR (failure)
@@ -74,6 +74,10 @@ When the user asks follow-up questions after receiving a solution:
 - Original image (if any) is captured as base64 and stored alongside
 - On follow-up, both original question and image are sent to `chatWithTutor`
 - System prompt instructs AI to "Always keep the original question in mind when answering follow-ups"
+- If the tutor asks a numbered clarification question, short replies are treated as answers to that clarification instead of restarting the loop
+- `ChatPanel` also seeds purpose-built starter prompts based on the current solution shape (for example video-heavy or homework-safe answers)
+- The follow-up UI is a guided workspace: conversation rail on the left, action rail on the right, large suggestion cards, and a dedicated composer card
+- `Escape` is owned locally by the follow-up workspace: it clears the draft first, then blurs the focused control, and no longer triggers the app-level solved-screen exit while the panel is active
 - This ensures context continuity even in multi-turn tutoring sessions
 
 ---
@@ -102,9 +106,7 @@ Users can select a subject (Auto-detect, Mathematics, Physics, Chemistry, etc.) 
 |------|-------|-----------|----------|
 | `fast` | Default fast model | No | Quick answers |
 | `deep` | Thinking-enabled | No | Step-by-step walkthroughs |
-| `research` | Grounded model | Yes (Google Search) | Questions needing citations/sources |
-
-**Automatic Grounding**: The app auto-enables grounding for prompts asking for citations, current information, evidence, or time-sensitive officeholder/current-fact questions (for example, "who is the current president"). Manual `research` mode is rarely needed.
+**Automatic Grounding**: The app auto-enables grounding for prompts asking for citations, current information, evidence, or time-sensitive officeholder/current-fact questions (for example, "who is the current president"). The preview UI stays focused on `fast` and `deep`; grounded routing happens automatically when the request requires it.
 
 **Homework-aware rendering**: obvious coursework prompts are solved in the normal flow, but `SolutionDisplay` can hide the final `**Answer:**` section by default so students see the method first and reveal the answer deliberately.
 
@@ -130,7 +132,8 @@ The `GeminiService` in `src/services/gemini.ts` handles all AI interactions:
 
 - `searchWeb(query, numResults)` - Google Custom Search API
 - `searchImages(query, numResults)` - Google Image Search
-- `searchVideos(query, maxResults)` - YouTube Data API
+- `searchVideos(query, maxResults)` - YouTube Data API with a free Jina-proxied YouTube search fallback when the direct API path is unavailable
+- `fetchYouTubeTranscriptPreview(videoId)` - best-effort free caption fetcher for public tracks, with graceful fallback when browser/CORS or the video itself blocks captions
 
 **Fallbacks**: If Google APIs are unavailable, falls back to Openverse (images) and Wikipedia (images).
 
@@ -154,7 +157,6 @@ The `fetchAllNews()` and `fetchNewsForQuery()` functions in `src/services/news.t
 - Tangle (Center - curated summaries)
 - WSJ Tech/World/US (Center-Right - quality journalism)
 - NewsNation (Center - original reporting)
-- The Center Square (Center-Right - state-level news)
 
 **Features:**
 - Parallel fetching from all sources
@@ -173,7 +175,7 @@ The `NewsView` component (`src/components/NewsView.tsx`) is a news-only editoria
 **Layout:**
 - lead story panel
 - latest-desk side rail
-- additional coverage grid
+- additional coverage grid that auto-fits card columns instead of leaving fixed dead space on wide canvases
 - source toggles for the approved outlets only
 
 **Per-Article Controls:**
@@ -210,9 +212,25 @@ Lightweight RSS/Atom parsing + remote fetch fallback layer for browser-safe feed
 | Charts | recharts (JSON chart blocks with line/bar/area/scatter support) |
 | Chemical structures | smiles-drawer (dark mode support, error fallback with copy/retry) |
 | Image search results | Inline rendering with `ImageRenderer` |
-| Video embeds | `VideoEmbed` (YouTube) |
+| Video embeds | `VideoEmbed` (YouTube) plus a companion brief card with fit summary, channel/date metadata, and transcript-or-notes fallback |
 | Definitions | `DictionaryResult` cards |
 | Source citations | Custom source-card UI (not raw markdown) |
+
+In compact mode, `RichResponse` uses a denser but still readability-first prose style for follow-up chat:
+- larger line height than a normal chat bubble
+- preserved list spacing for numbered steps
+- visible blockquote/callout styling
+- the same media-marker resolution pipeline as the main answer
+
+### ChatPanel Component
+
+`src/components/ChatPanel.tsx` is a purpose-built tutoring surface rather than a generic messenger:
+
+- conversation history in a dedicated reading pane with themed scroll chrome
+- side action rail with a primary composer card, explicit `Esc` behavior, and stronger empty/error states
+- large reply cards pulled from tutor clarification choices when available
+- otherwise seeded with solution-aware starter prompts (for example next-step, study guide, video recap, or video-comparison prompts)
+- retry/edit controls for the last user turn
 
 ### SolutionDisplay Component
 
@@ -333,7 +351,7 @@ bun test src/utils/image.test.ts src/utils/input.test.ts src/utils/solution.test
 
 2. **API key in bundle**: The Gemini key is shipped to the client bundle in this architecture.
 
-3. **Rate limits**: Free tiers hit limits quickly. If `deep` or `research` fails, retry with `fast`.
+3. **Rate limits**: Free tiers hit limits quickly. If `deep` fails, retry with `fast`.
 
 4. **Auto-upgrading**: The app auto-upgrades to grounded or Pro-tier model routing for source-sensitive or complex prompts.
 

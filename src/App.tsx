@@ -73,6 +73,37 @@ function isNewsRequest(value: string) {
   return /\b(news|headlines|current events|latest on|latest about|what happened|what's happening|updates? on)\b/i.test(value);
 }
 
+function buildFollowUpStarters(solution: string, hideAnswerByDefault: boolean) {
+  const starters = [
+    hideAnswerByDefault ? "Check my next step before revealing the final answer." : "Explain why this works in simpler words.",
+    "Show me the single next step I should do on my own.",
+    "Check this approach for mistakes before I continue.",
+    "Give me one mistake to avoid on a problem like this.",
+  ];
+
+  if (solution.includes("[VIDEO_SEARCH:")) {
+    starters.unshift(
+      "Tell me exactly what to watch for in the suggested video.",
+      "Summarize the recommended video in 5 useful bullets.",
+    );
+    starters.push("Compare the video method with the written explanation above.");
+  }
+
+  if (solution.includes("[IMAGE_SEARCH:")) {
+    starters.push("Explain what the image or diagram is supposed to show.");
+  }
+
+  if (solution.includes("```chart")) {
+    starters.push("Explain what the chart means without jargon.");
+  }
+
+  if (solution.includes("[IMAGE_SEARCH:") || solution.includes("diagram")) {
+    starters.push("Explain what part of the diagram I should focus on first.");
+  }
+
+  return [...new Set(starters)].slice(0, 4);
+}
+
 export default function App() {
   // ── Core application state ──────────────────────────────────────────
   const [appState, setAppState] = useState<AppState>("IDLE");
@@ -112,6 +143,11 @@ export default function App() {
   // ── Hooks ───────────────────────────────────────────────────────────
   const [darkMode, toggleDarkMode] = useDarkMode();
   const history = useHistory();
+  const appStateRef = useRef<AppState>("IDLE");
+
+  useEffect(() => {
+    appStateRef.current = appState;
+  }, [appState]);
 
   // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -252,8 +288,6 @@ export default function App() {
       setChatHistory([]);
       setLastMode(mode);
 
-      const currentAppState = { current: appState };
-
       try {
         let result: string;
         let originalImageBase64: string | undefined;
@@ -290,7 +324,7 @@ export default function App() {
         const { cleanText, actions } = parseAIActions(result);
 
         if (actions.includes("show_wotd")) {
-          if (solution && currentAppState.current === "SOLVED") {
+          if (solution && appStateRef.current === "SOLVED") {
             setSavedState({
               solution,
               hideAnswerByDefault: solutionHideAnswerDefault,
@@ -305,7 +339,7 @@ export default function App() {
         }
 
         if (actions.includes("show_news")) {
-          if (solution && currentAppState.current === "SOLVED") {
+          if (solution && appStateRef.current === "SOLVED") {
             setSavedState({
               solution,
               hideAnswerByDefault: solutionHideAnswerDefault,
@@ -322,7 +356,7 @@ export default function App() {
 
         const finalSolution = cleanText || result;
 
-        if (currentAppState.current === "NEWS" || currentAppState.current === "WOTD") {
+        if (appStateRef.current === "NEWS" || appStateRef.current === "WOTD") {
           setBackgroundTasks((prev) => [
             ...prev.filter((t) => t.id !== taskId),
             {
@@ -436,12 +470,19 @@ export default function App() {
   // ── Global keyboard shortcuts ────────────────────────────────────────
 
   // ESC to close views/navigate back
-  const chatInputRef = useRef<HTMLInputElement>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     const handleGlobalKeys = (event: KeyboardEvent) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const insideChatPanel = Boolean(target?.closest('[data-chat-panel="true"]'));
+
       // ESC: Close views and navigate back - handle this even if in an input
       if (event.key === "Escape") {
+        if (insideChatPanel) {
+          return;
+        }
+
         if (showHistory) {
           event.preventDefault();
           setShowHistory(false);
@@ -550,6 +591,15 @@ export default function App() {
 
       try {
         const cleanSolution = stripSolutionClientArtifacts(solution);
+        const lastTutorMessage =
+          [...historyBeforeCurrentTurn].reverse().find((message) => message.role === "tutor")?.text ?? null;
+        const looksLikeClarifyingTurn =
+          Boolean(lastTutorMessage) &&
+          /(\bclarif|could you|which one|which of these|do you mean|specify|interested in|for example|1\.|2\.)/i.test(lastTutorMessage);
+        const effectiveMessage =
+          looksLikeClarifyingTurn && trimmed.length < 120
+            ? `You asked a clarifying question in your previous reply. Treat the user's message below as their answer to that clarification and continue with the actual task instead of asking the same question again.\n\nPrevious tutor message:\n${lastTutorMessage}\n\nUser answer:\n${trimmed}`
+            : trimmed;
         const context: ChatMessage[] =
           historyBeforeCurrentTurn.length === 0
             ? [
@@ -558,7 +608,15 @@ export default function App() {
               ]
             : [];
 
-        const reply = await chatWithTutor([...context, ...historyBeforeCurrentTurn], trimmed, originalQuestionRef.current);
+        let reply: string;
+        try {
+          reply = await chatWithTutor([...context, ...historyBeforeCurrentTurn], effectiveMessage, originalQuestionRef.current);
+        } catch (firstError) {
+          await new Promise((resolve) => window.setTimeout(resolve, 350));
+          reply = await chatWithTutor([...context, ...historyBeforeCurrentTurn], effectiveMessage, originalQuestionRef.current);
+          console.warn("Recovered follow-up chat after retry.", firstError);
+        }
+
         setChatHistory([...nextHistory, { role: "tutor", text: reply }]);
         return true;
       } catch (err) {
@@ -672,7 +730,7 @@ export default function App() {
 
       <div
         className={`mx-auto px-4 py-8 md:py-12 ${
-          appState === "NEWS" ? "max-w-[1500px]" : appState === "WOTD" ? "max-w-6xl" : "max-w-5xl"
+          appState === "NEWS" ? "max-w-[1780px]" : appState === "WOTD" ? "max-w-6xl" : "max-w-5xl"
         }`}
       >
         <Header
@@ -787,6 +845,7 @@ export default function App() {
                 onSend={handleSendChat}
                 onRetryLast={handleRetryChat}
                 inputRef={chatInputRef}
+                starterPrompts={buildFollowUpStarters(solution, solutionHideAnswerDefault)}
               />
             </div>
           )}

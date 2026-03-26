@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { looksLikeFeedResponse } from "./rss";
 import { parseMerriamWotdXml } from "./wotd";
 
 describe("word of the day parsing", () => {
@@ -31,5 +32,13 @@ describe("word of the day parsing", () => {
     expect(parsed.example?.includes("Ivy relaxed")).toBe(true);
     expect(parsed.didYouKnow?.includes("rhythm or flow")).toBe(true);
     expect(parsed.audioUrl).toBe("https://audio.example/cadence.mp3");
+  });
+
+  test("rejects html challenge pages when sniffing RSS responses", () => {
+    const html = "<!DOCTYPE html><html><head><title>Challenge</title></head><body>blocked</body></html>";
+    const xml = "<?xml version=\"1.0\"?><rss><channel><item><title>cadence</title></item></channel></rss>";
+
+    expect(looksLikeFeedResponse(html)).toBe(false);
+    expect(looksLikeFeedResponse(xml)).toBe(true);
   });
 });
